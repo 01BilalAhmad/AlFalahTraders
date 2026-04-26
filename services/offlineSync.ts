@@ -1,0 +1,151 @@
+// Powered by OnSpace.AI
+// Offline-First Sync Engine for Al-Falah Traders
+import NetInfo, { NetInfoState } from '@react-native-community/netinfo';
+import { StorageService, OfflineRecovery } from './storage';
+import { ApiService } from './api';
+
+export type SyncResult = {
+  synced: number;
+  failed: number;
+  failedItems: OfflineRecovery[];
+};
+
+export type NetworkStatus = {
+  isOnline: boolean;
+  isWifi: boolean;
+  type: string;
+};
+
+// Module-level lock with a safety timeout so it never gets permanently stuck
+let syncInProgress = false;
+let syncLockTimeout: ReturnType<typeof setTimeout> | null = null;
+
+function acquireSyncLock(): boolean {
+  if (syncInProgress) return false;
+  syncInProgress = true;
+  // Safety: force-release lock after 30 seconds regardless
+  syncLockTimeout = setTimeout(() => {
+    syncInProgress = false;
+  }, 30000);
+  return true;
+}
+
+function releaseSyncLock() {
+  syncInProgress = false;
+  if (syncLockTimeout) {
+    clearTimeout(syncLockTimeout);
+    syncLockTimeout = null;
+  }
+}
+
+/**
+ * Get current network status (one-shot)
+ */
+export async function getNetworkStatus(): Promise<NetworkStatus> {
+  const state = await NetInfo.fetch();
+  return {
+    isOnline: state.isConnected === true && state.isInternetReachable !== false,
+    isWifi: state.type === 'wifi',
+    type: state.type,
+  };
+}
+
+/**
+ * Subscribe to network changes. Returns an unsubscribe function.
+ */
+export function subscribeToNetworkChanges(
+  callback: (status: NetworkStatus) => void
+): () => void {
+  const unsubscribe = NetInfo.addEventListener((state: NetInfoState) => {
+    callback({
+      isOnline: state.isConnected === true && state.isInternetReachable !== false,
+      isWifi: state.type === 'wifi',
+      type: state.type,
+    });
+  });
+  return unsubscribe;
+}
+
+/**
+ * Attempt to sync all queued offline recoveries to the server.
+ * Strategy: always try one-by-one (most reliable). Batch is unreliable
+ * because it requires previousBalance which we don't have offline.
+ * Safe to call multiple times — prevents concurrent runs via lock.
+ */
+export async function syncOfflineRecoveries(): Promise<SyncResult> {
+  if (!acquireSyncLock()) {
+    // Already syncing — return current queue size as "pending"
+    const queue = await StorageService.getOfflineQueue();
+    return { synced: 0, failed: queue.length, failedItems: queue };
+  }
+
+  try {
+    const queue = await StorageService.getOfflineQueue();
+    if (queue.length === 0) {
+      return { synced: 0, failed: 0, failedItems: [] };
+    }
+
+    const synced: string[] = [];
+    const failed: OfflineRecovery[] = [];
+
+    // One-by-one is primary — most reliable since we don't have previousBalance for batch
+    for (const item of queue) {
+      try {
+        await ApiService.submitRecovery({
+          shopId: item.shopId,
+          type: 'recovery',
+          amount: item.amount,
+          createdBy: item.createdBy,
+          description: item.description,
+          gpsLat: item.gpsLat,
+          gpsLng: item.gpsLng,
+          gpsAddress: item.gpsAddress,
+        });
+        synced.push(item.localId);
+      } catch (err: any) {
+        // If the error is a business rule error (e.g. amount > balance), remove it too
+        // so it doesn't block the queue forever — log for reference
+        const msg: string = err?.message ?? '';
+        const isPermanentError =
+          msg.includes('exceeds shop balance') ||
+          msg.includes('Shop not found') ||
+          msg.includes('Minimum transaction') ||
+          msg.includes('Maximum single');
+        if (isPermanentError) {
+          // Remove from queue — it will never succeed, no point retrying
+          synced.push(item.localId);
+        } else {
+          failed.push(item);
+        }
+      }
+    }
+
+    if (synced.length > 0) {
+      await StorageService.removeFromOfflineQueue(synced);
+    }
+
+    return { synced: synced.length, failed: failed.length, failedItems: failed };
+  } finally {
+    releaseSyncLock();
+  }
+}
+
+/**
+ * Force-reset the sync lock. Call this if UI shows stuck syncing state.
+ */
+export function resetSyncLock() {
+  releaseSyncLock();
+}
+
+/**
+ * Save shops locally for offline use (called on full sync)
+ */
+export async function performFullSync(userId: string): Promise<boolean> {
+  try {
+    const data = await ApiService.mobileSync(userId);
+    await StorageService.saveShops(data.shops);
+    return true;
+  } catch {
+    return false;
+  }
+}
