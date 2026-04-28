@@ -9,7 +9,6 @@ import {
   Alert,
   TextInput,
   Pressable,
-  Dimensions,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -18,16 +17,15 @@ import { useAuth } from '@/hooks/useAuth';
 import { useShops } from '@/hooks/useShops';
 import { ApiService, Shop } from '@/services/api';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
-import { formatPKR, getTodayDayName, getTodayLabel, getTodayDateStr, capitalize } from '@/utils/format';
+import { getTodayDayName, getTodayLabel, getTodayDateStr, capitalize } from '@/utils/format';
 import { ShopCard } from '@/components/ui/ShopCard';
 import { RecoveryBottomSheet } from '@/components/ui/RecoveryBottomSheet';
+import { GpsVisitBottomSheet } from '@/components/ui/GpsVisitBottomSheet';
 import { ShopDetailModal } from '@/components/ui/ShopDetailModal';
 import { SuccessOverlay } from '@/components/ui/SuccessOverlay';
 import { OfflineBanner } from '@/components/ui/OfflineBanner';
 import { PerformanceChart } from '@/components/ui/PerformanceChart';
 import { RecoveryAnalysisChart } from '@/components/ui/RecoveryAnalysisChart';
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 type ChartView = 'trend' | 'analysis' | 'none';
 
@@ -49,6 +47,7 @@ export default function TodayRouteScreen() {
 
   const [recoveryShop, setRecoveryShop] = useState<Shop | null>(null);
   const [detailShop, setDetailShop] = useState<Shop | null>(null);
+  const [gpsVisitShop, setGpsVisitShop] = useState<Shop | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successState, setSuccessState] = useState<{
     visible: boolean;
@@ -151,6 +150,10 @@ export default function TodayRouteScreen() {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleGpsVisitMarked = (shopId: string) => {
+    setVisitedShopIds((prev) => new Set([...prev, shopId]));
   };
 
   const filteredShops = searchQuery.trim()
@@ -385,6 +388,7 @@ export default function TodayRouteScreen() {
               isVisited={visitedShopIds.has(item.id)}
               onCollect={() => setRecoveryShop(item)}
               onPress={() => setDetailShop(item)}
+              onGpsVisit={() => setGpsVisitShop(item)}
             />
           )}
           contentContainerStyle={styles.listContent}
@@ -397,6 +401,13 @@ export default function TodayRouteScreen() {
         onClose={() => setRecoveryShop(null)}
         onSubmit={handleSubmitRecovery}
         isSubmitting={isSubmitting}
+      />
+
+      <GpsVisitBottomSheet
+        visible={gpsVisitShop !== null}
+        shop={gpsVisitShop}
+        onClose={() => setGpsVisitShop(null)}
+        onVisitMarked={handleGpsVisitMarked}
       />
 
       <ShopDetailModal

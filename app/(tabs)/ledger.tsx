@@ -1,5 +1,5 @@
 // Powered by OnSpace.AI
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -10,7 +10,6 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
-  ScrollView,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -20,7 +19,6 @@ import { useShops } from '@/hooks/useShops';
 import { ApiService, LedgerResponse, Shop, Transaction } from '@/services/api';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
 import { formatPKR, formatDateTime } from '@/utils/format';
-import { Badge } from '@/components/ui/Badge';
 import { downloadLedgerPdf } from '@/utils/generateLedgerPdf';
 
 function SummaryPill({
@@ -368,6 +366,39 @@ export default function LedgerScreen() {
                 />
               </View>
 
+              {/* Prominent PDF Download Button */}
+              <Pressable
+                style={({ pressed }) => [styles.pdfDownloadCard, pressed && styles.pdfDownloadCardPressed]}
+                onPress={handleDownloadPdf}
+                disabled={isGeneratingPdf}
+              >
+                <LinearGradient
+                  colors={['#EF4444', '#DC2626']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.pdfGradient}
+                >
+                  <View style={styles.pdfIconWrap}>
+                    {isGeneratingPdf ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <MaterialIcons name="picture-as-pdf" size={24} color="#FFFFFF" />
+                    )}
+                  </View>
+                  <View style={styles.pdfTextWrap}>
+                    <Text style={styles.pdfTitle}>
+                      {isGeneratingPdf ? 'Generating PDF...' : 'Download Ledger PDF'}
+                    </Text>
+                    <Text style={styles.pdfSubtitle}>
+                      {isGeneratingPdf
+                        ? 'Please wait...'
+                        : `Full statement of ${ledger.shop.name}`}
+                    </Text>
+                  </View>
+                  <MaterialIcons name="download" size={22} color="rgba(255,255,255,0.8)" />
+                </LinearGradient>
+              </Pressable>
+
               {/* Transaction header */}
               <View style={styles.txnHeader}>
                 <Text style={styles.txnHeaderTitle}>
@@ -546,7 +577,42 @@ const styles = StyleSheet.create({
   shopInfoMeta: { flexDirection: 'row', alignItems: 'center', gap: 3, flexWrap: 'wrap' },
   shopInfoMetaText: { fontSize: FontSize.xs, color: Colors.textMuted },
   shopInfoDot: { color: Colors.textMuted, marginHorizontal: 2 },
-  summaryRow: { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.md },
+  summaryRow: { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.sm },
+  // PDF Download Card
+  pdfDownloadCard: {
+    borderRadius: Radius.md,
+    overflow: 'hidden',
+    marginBottom: Spacing.md,
+    ...Shadow.md,
+  },
+  pdfDownloadCardPressed: { opacity: 0.9 },
+  pdfGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: Spacing.md,
+    gap: Spacing.sm,
+  },
+  pdfIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: Radius.sm,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pdfTextWrap: {
+    flex: 1,
+  },
+  pdfTitle: {
+    fontSize: FontSize.base,
+    fontWeight: FontWeight.bold,
+    color: '#FFFFFF',
+  },
+  pdfSubtitle: {
+    fontSize: FontSize.xs,
+    color: 'rgba(255,255,255,0.75)',
+    marginTop: 1,
+  },
   txnHeader: {
     flexDirection: 'row',
     alignItems: 'center',

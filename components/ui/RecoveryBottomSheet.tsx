@@ -1,5 +1,5 @@
 // Powered by OnSpace.AI
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -86,6 +86,53 @@ const pulseStyles = StyleSheet.create({
   },
 });
 
+// Confetti particles animation
+function ConfettiOverlay({ visible }: { visible: boolean }) {
+  const particles = useRef(
+    Array.from({ length: 20 }, (_, i) => ({
+      id: i,
+      x: Math.random() * SCREEN_WIDTH,
+      delay: Math.random() * 300,
+      color: ['#059669', '#F59E0B', '#EF4444', '#2563EB', '#7C3AED'][i % 5],
+      size: 4 + Math.random() * 6,
+      rotation: Math.random() * 360,
+    }))
+  ).current;
+
+  if (!visible) return null;
+
+  return (
+    <View style={confettiStyles.container} pointerEvents="none">
+      {particles.map((p) => (
+        <Animated.View
+          key={p.id}
+          style={[
+            confettiStyles.particle,
+            {
+              left: p.x,
+              backgroundColor: p.color,
+              width: p.size,
+              height: p.size,
+              borderRadius: p.size / 2,
+            },
+          ]}
+        />
+      ))}
+    </View>
+  );
+}
+const confettiStyles = StyleSheet.create({
+  container: {
+    ...StyleSheet.absoluteFillObject,
+    overflow: 'hidden',
+    zIndex: 100,
+  },
+  particle: {
+    position: 'absolute',
+    top: -10,
+  },
+});
+
 export function RecoveryBottomSheet({
   visible,
   shop,
@@ -101,6 +148,24 @@ export function RecoveryBottomSheet({
   const [capturingGps, setCapturingGps] = useState(false);
   const [mapLoading, setMapLoading] = useState(false);
   const [focusedField, setFocusedField] = useState<'amount' | 'note' | null>(null);
+  const [showSuccess, setShowSuccess] = useState(false);
+
+  // Slide-up animation
+  const slideAnim = useRef(new Animated.Value(400)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (visible) {
+      Animated.parallel([
+        Animated.spring(slideAnim, { toValue: 0, useNativeDriver: true, tension: 80, friction: 12 }),
+        Animated.timing(fadeAnim, { toValue: 1, duration: 250, useNativeDriver: true }),
+      ]).start();
+    } else {
+      slideAnim.setValue(400);
+      fadeAnim.setValue(0);
+      setShowSuccess(false);
+    }
+  }, [visible]);
 
   const reset = useCallback(() => {
     setAmount('');
@@ -109,6 +174,7 @@ export function RecoveryBottomSheet({
     setGpsLng(undefined);
     setGpsAddress(undefined);
     setFocusedField(null);
+    setShowSuccess(false);
   }, []);
 
   const handleClose = () => {
@@ -140,7 +206,7 @@ export function RecoveryBottomSheet({
         const parts = [geo.street, geo.district, geo.city].filter(Boolean);
         setGpsAddress(parts.join(', '));
       }
-    } catch (e) {
+    } catch {
       Alert.alert('GPS Error', 'Could not get location. Please try again.');
     } finally {
       setCapturingGps(false);
@@ -165,7 +231,10 @@ export function RecoveryBottomSheet({
       return;
     }
     await onSubmit({ amount: numAmount, description, gpsLat, gpsLng, gpsAddress });
-    reset();
+    setShowSuccess(true);
+    setTimeout(() => {
+      reset();
+    }, 1200);
   };
 
   if (!shop) return null;
@@ -175,15 +244,25 @@ export function RecoveryBottomSheet({
   const mapUrl = gpsLat && gpsLng ? getOsmStaticUrl(gpsLat, gpsLng) : null;
   const hasGps = !!(gpsLat && gpsLng);
   const isValid = numericAmount >= MIN_RECOVERY && numericAmount <= MAX_RECOVERY && (!shop || numericAmount <= shop.balance);
+  const remainingBalance = shop.balance - numericAmount;
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
-      <Pressable style={styles.backdrop} onPress={handleClose} />
+    <Modal visible={visible} transparent animationType="none" onRequestClose={handleClose}>
+      <Pressable style={styles.backdrop} onPress={handleClose}>
+        <Animated.View style={[styles.backdropFade, { opacity: fadeAnim }]} />
+      </Pressable>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}
       >
-        <View style={styles.sheet}>
+        <Animated.View
+          style={[
+            styles.sheet,
+            { transform: [{ translateY: slideAnim }], opacity: fadeAnim },
+          ]}
+        >
+          <ConfettiOverlay visible={showSuccess} />
+
           {/* Handle */}
           <View style={styles.handle} />
 
@@ -197,6 +276,7 @@ export function RecoveryBottomSheet({
             {/* Decorative elements */}
             <View style={styles.headerBubble1} />
             <View style={styles.headerBubble2} />
+            <View style={styles.headerBubble3} />
 
             <View style={styles.header}>
               <View style={styles.headerLeft}>
@@ -330,6 +410,47 @@ export function RecoveryBottomSheet({
                 })}
               </View>
             </View>
+
+            {/* New Balance Preview Card */}
+            {numericAmount > 0 && numericAmount <= shop.balance ? (
+              <View style={styles.balancePreviewCard}>
+                <LinearGradient
+                  colors={['#ECFDF5', '#D1FAE5']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.balancePreviewGradient}
+                >
+                  <View style={styles.balancePreviewHeader}>
+                    <MaterialIcons name="trending-down" size={16} color={Colors.primaryDark} />
+                    <Text style={styles.balancePreviewTitle}>After This Recovery</Text>
+                  </View>
+                  <View style={styles.balancePreviewRow}>
+                    <View style={styles.balancePreviewItem}>
+                      <Text style={styles.balancePreviewLabel}>Current</Text>
+                      <Text style={[styles.balancePreviewValue, { color: Colors.danger }]}>
+                        {formatPKR(shop.balance)}
+                      </Text>
+                    </View>
+                    <MaterialIcons name="arrow-forward" size={16} color={Colors.primary} />
+                    <View style={styles.balancePreviewItem}>
+                      <Text style={styles.balancePreviewLabel}>Remaining</Text>
+                      <Text style={[styles.balancePreviewValue, { color: remainingBalance > 0 ? Colors.secondary : Colors.primary }]}>
+                        {formatPKR(remainingBalance)}
+                      </Text>
+                    </View>
+                  </View>
+                  {/* Reduction bar */}
+                  <View style={styles.reductionBar}>
+                    <View style={[styles.reductionBarFill, {
+                      width: `${Math.min((numericAmount / shop.balance) * 100, 100)}%`,
+                    }]} />
+                  </View>
+                  <Text style={styles.reductionText}>
+                    {((numericAmount / shop.balance) * 100).toFixed(0)}% reduction
+                  </Text>
+                </LinearGradient>
+              </View>
+            ) : null}
 
             {/* Note section */}
             <View style={styles.section}>
@@ -494,40 +615,49 @@ export function RecoveryBottomSheet({
           {/* Submit footer */}
           <View style={styles.footer}>
             {numericAmount > 0 && isValid ? (
-              <LinearGradient colors={['#ECFDF5', '#D1FAE5']} style={styles.amountPreview}>
+              <View style={styles.amountPreview}>
                 <View>
                   <Text style={styles.amountPreviewLabel}>Recovery Amount</Text>
                   <Text style={styles.amountPreviewSub}>This will reduce the outstanding balance</Text>
                 </View>
                 <Text style={styles.amountPreviewValue}>{formatPKR(numericAmount)}</Text>
-              </LinearGradient>
+              </View>
             ) : null}
 
-            <Pressable
-              style={({ pressed }) => [
-                styles.submitBtn,
-                (!isValid || isSubmitting) && styles.submitBtnDisabled,
-                pressed && isValid && !isSubmitting && styles.submitBtnPressed,
-              ]}
-              onPress={handleSubmit}
-              disabled={!isValid || isSubmitting}
-            >
-              {isSubmitting ? (
-                <>
-                  <ActivityIndicator size="small" color={Colors.textInverse} />
-                  <Text style={styles.submitBtnText}>Submitting...</Text>
-                </>
-              ) : (
-                <>
-                  <View style={styles.submitBtnIcon}>
-                    <MaterialIcons name="check" size={18} color={Colors.textInverse} />
-                  </View>
-                  <Text style={styles.submitBtnText}>Submit Recovery</Text>
-                </>
-              )}
-            </Pressable>
+            {showSuccess ? (
+              <View style={styles.successFooter}>
+                <LinearGradient colors={['#059669', '#047857']} style={styles.successFooterInner}>
+                  <MaterialIcons name="check-circle" size={24} color="#FFFFFF" />
+                  <Text style={styles.successFooterText}>Recovery Submitted Successfully!</Text>
+                </LinearGradient>
+              </View>
+            ) : (
+              <Pressable
+                style={({ pressed }) => [
+                  styles.submitBtn,
+                  (!isValid || isSubmitting) && styles.submitBtnDisabled,
+                  pressed && isValid && !isSubmitting && styles.submitBtnPressed,
+                ]}
+                onPress={handleSubmit}
+                disabled={!isValid || isSubmitting}
+              >
+                {isSubmitting ? (
+                  <>
+                    <ActivityIndicator size="small" color={Colors.textInverse} />
+                    <Text style={styles.submitBtnText}>Submitting...</Text>
+                  </>
+                ) : (
+                  <>
+                    <View style={styles.submitBtnIcon}>
+                      <MaterialIcons name="check" size={18} color={Colors.textInverse} />
+                    </View>
+                    <Text style={styles.submitBtnText}>Submit Recovery</Text>
+                  </>
+                )}
+              </Pressable>
+            )}
           </View>
-        </View>
+        </Animated.View>
       </KeyboardAvoidingView>
     </Modal>
   );
@@ -536,6 +666,9 @@ export function RecoveryBottomSheet({
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
+  },
+  backdropFade: {
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.5)',
   },
   keyboardView: {
@@ -586,6 +719,15 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.04)',
     bottom: -20,
     left: -10,
+  },
+  headerBubble3: {
+    position: 'absolute',
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    top: 20,
+    left: '40%',
   },
   header: {
     flexDirection: 'row',
@@ -811,6 +953,68 @@ const styles = StyleSheet.create({
   quickBtnTextActive: {
     color: Colors.primaryDark,
   },
+  // Balance Preview Card
+  balancePreviewCard: {
+    marginTop: Spacing.md,
+    borderRadius: Radius.md,
+    overflow: 'hidden',
+    ...Shadow.sm,
+  },
+  balancePreviewGradient: {
+    padding: Spacing.md,
+  },
+  balancePreviewHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: Spacing.sm,
+  },
+  balancePreviewTitle: {
+    fontSize: FontSize.xs,
+    fontWeight: FontWeight.bold,
+    color: Colors.primaryDark,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  balancePreviewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  balancePreviewItem: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 2,
+  },
+  balancePreviewLabel: {
+    fontSize: 10,
+    color: Colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  balancePreviewValue: {
+    fontSize: FontSize.lg,
+    fontWeight: FontWeight.bold,
+  },
+  reductionBar: {
+    height: 4,
+    backgroundColor: 'rgba(5, 150, 105, 0.2)',
+    borderRadius: Radius.full,
+    overflow: 'hidden',
+    marginTop: Spacing.sm,
+  },
+  reductionBarFill: {
+    height: 4,
+    backgroundColor: Colors.primary,
+    borderRadius: Radius.full,
+  },
+  reductionText: {
+    fontSize: FontSize.xs,
+    color: Colors.primaryDark,
+    fontWeight: FontWeight.semibold,
+    textAlign: 'center',
+    marginTop: 4,
+  },
   // Note
   noteWrap: {
     flexDirection: 'row',
@@ -1011,6 +1215,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     borderRadius: Radius.md,
     padding: Spacing.md,
+    backgroundColor: '#ECFDF5',
   },
   amountPreviewLabel: {
     fontSize: FontSize.sm,
@@ -1055,5 +1260,22 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.2)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  // Success footer
+  successFooter: {
+    borderRadius: Radius.md,
+    overflow: 'hidden',
+  },
+  successFooterInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+    paddingVertical: 16,
+  },
+  successFooterText: {
+    fontSize: FontSize.md,
+    fontWeight: FontWeight.bold,
+    color: '#FFFFFF',
   },
 });

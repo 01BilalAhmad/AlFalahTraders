@@ -5,13 +5,14 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
 import { Shop } from '@/services/api';
 import { formatPKR } from '@/utils/format';
-import { Badge } from './Badge';
+
 
 interface ShopCardProps {
   shop: Shop;
   isVisited: boolean;
   onCollect: () => void;
   onPress: () => void;
+  onGpsVisit?: () => void;
 }
 
 export const ShopCard = memo(function ShopCard({
@@ -19,6 +20,7 @@ export const ShopCard = memo(function ShopCard({
   isVisited,
   onCollect,
   onPress,
+  onGpsVisit,
 }: ShopCardProps) {
   const isOverLimit = shop.balance > shop.creditLimit;
   const utilisation = shop.creditLimit > 0 ? Math.min((shop.balance / shop.creditLimit) * 100, 100) : 0;
@@ -87,6 +89,17 @@ export const ShopCard = memo(function ShopCard({
         >
           <MaterialIcons name="payments" size={16} color={Colors.textInverse} />
           <Text style={styles.collectBtnText}>Collect Recovery</Text>
+        </Pressable>
+        <Pressable
+          style={({ pressed }) => [styles.gpsBtn, isVisited && styles.gpsBtnVisited, pressed && styles.gpsBtnPressed]}
+          onPress={onGpsVisit}
+          hitSlop={4}
+        >
+          <MaterialIcons
+            name={isVisited ? 'check-circle' : 'my-location'}
+            size={18}
+            color={isVisited ? Colors.primary : '#2563EB'}
+          />
         </Pressable>
         <Pressable
           style={({ pressed }) => [styles.callBtn, pressed && styles.callBtnPressed]}
@@ -238,6 +251,21 @@ const styles = StyleSheet.create({
     fontWeight: FontWeight.semibold,
     color: Colors.textInverse,
   },
+  gpsBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: Radius.sm,
+    borderWidth: 1.5,
+    borderColor: '#2563EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#EFF6FF',
+  },
+  gpsBtnVisited: {
+    borderColor: Colors.primary,
+    backgroundColor: Colors.primaryLight,
+  },
+  gpsBtnPressed: { opacity: 0.7 },
   callBtn: {
     width: 42,
     height: 42,
