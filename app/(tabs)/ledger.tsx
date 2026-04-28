@@ -8,6 +8,7 @@ import {
   Pressable,
   TextInput,
   ActivityIndicator,
+  Alert,
   Modal,
   ScrollView,
 } from 'react-native';
@@ -20,6 +21,7 @@ import { ApiService, LedgerResponse, Shop, Transaction } from '@/services/api';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
 import { formatPKR, formatDateTime } from '@/utils/format';
 import { Badge } from '@/components/ui/Badge';
+import { downloadLedgerPdf } from '@/utils/generateLedgerPdf';
 
 function SummaryPill({
   label,
@@ -182,6 +184,7 @@ export default function LedgerScreen() {
   const [selectedShop, setSelectedShop] = useState<Shop | null>(null);
   const [ledger, setLedger] = useState<LedgerResponse | null>(null);
   const [isLoadingLedger, setIsLoadingLedger] = useState(false);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
   useEffect(() => {
     if (user) loadAllShops(user.id);
@@ -198,6 +201,18 @@ export default function LedgerScreen() {
       setLedger(null);
     } finally {
       setIsLoadingLedger(false);
+    }
+  }
+
+  async function handleDownloadPdf() {
+    if (!ledger) return;
+    setIsGeneratingPdf(true);
+    try {
+      await downloadLedgerPdf(ledger);
+    } catch (e: any) {
+      Alert.alert('PDF Error', e.message || 'Failed to generate PDF. Please try again.');
+    } finally {
+      setIsGeneratingPdf(false);
     }
   }
 
@@ -227,9 +242,19 @@ export default function LedgerScreen() {
           <Text style={styles.headerTitle}>Shop Ledger</Text>
           <Text style={styles.headerSub}>Full account statement</Text>
         </View>
-        <View style={styles.headerIcon}>
-          <MaterialIcons name="menu-book" size={22} color="rgba(255,255,255,0.85)" />
-        </View>
+        {ledger && (
+          <Pressable
+            style={({ pressed }) => [styles.headerDownloadBtn, pressed && { opacity: 0.8 }]}
+            onPress={handleDownloadPdf}
+            disabled={isGeneratingPdf}
+          >
+            {isGeneratingPdf ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <MaterialIcons name="picture-as-pdf" size={22} color="rgba(255,255,255,0.95)" />
+            )}
+          </Pressable>
+        )}
       </LinearGradient>
 
       {/* Shop selector */}
@@ -461,6 +486,14 @@ const styles = StyleSheet.create({
     height: 40,
     borderRadius: 20,
     backgroundColor: 'rgba(255,255,255,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerDownloadBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.18)',
     alignItems: 'center',
     justifyContent: 'center',
   },

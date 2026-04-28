@@ -35,7 +35,13 @@
           "backgroundColor": "#ffffff"
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow AlFalah Traders to access your location for GPS verification during recovery collection."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
