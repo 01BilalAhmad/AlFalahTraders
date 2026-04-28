@@ -7,11 +7,12 @@
     "icon": "./assets/images/logo.png",
     "scheme": "onspaceapp",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "ios": {
       "supportsTablet": true
     },
     "android": {
+      "package": "com.alfalah.traders",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/logo.png",
         "backgroundColor": "#ffffff"
