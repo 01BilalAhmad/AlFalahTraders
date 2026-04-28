@@ -333,19 +333,23 @@ export function RecoveryBottomSheet({
 
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={handleClose}>
-      <Pressable style={styles.backdrop} onPress={handleClose}>
-        <Animated.View style={[styles.backdropFade, { opacity: fadeAnim }]} />
-      </Pressable>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.keyboardView}
-      >
-        <Animated.View
-          style={[
-            styles.sheet,
-            { transform: [{ translateY: slideAnim }], opacity: fadeAnim },
-          ]}
+      <View style={styles.modalRoot}>
+        {/* Backdrop */}
+        <Pressable style={styles.backdrop} onPress={handleClose}>
+          <Animated.View style={[styles.backdropFade, { opacity: fadeAnim }]} />
+        </Pressable>
+
+        {/* Sheet container - stays at bottom, shrinks with keyboard on Android */}
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.keyboardView}
         >
+          <Animated.View
+            style={[
+              styles.sheet,
+              { transform: [{ translateY: slideAnim }], opacity: fadeAnim },
+            ]}
+          >
           <ConfettiOverlay visible={showSuccess} />
           <SuccessCheckmark visible={showSuccess} />
 
@@ -798,24 +802,28 @@ export function RecoveryBottomSheet({
             )}
           </View>
         </Animated.View>
-      </KeyboardAvoidingView>
+        </KeyboardAvoidingView>
+      </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
+  modalRoot: {
     flex: 1,
+  },
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 0,
   },
   backdropFade: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.5)',
   },
   keyboardView: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
+    flex: 1,
+    justifyContent: 'flex-end',
+    zIndex: 1,
   },
   sheet: {
     backgroundColor: Colors.background,
