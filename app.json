@@ -39,6 +39,13 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "7584a84e-41f3-4f88-92d5-feabd990a6f7"
+      }
+    },
+    "owner": "bilalahmadpk"
   }
 }
