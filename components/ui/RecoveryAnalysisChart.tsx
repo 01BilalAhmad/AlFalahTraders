@@ -1,5 +1,5 @@
-// Powered by OnSpace.AI
-import React, { memo, useState, useEffect, useRef } from 'react';
+// Powered by OnSpace.AI - OPTIMIZED
+import React, { memo, useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,17 +8,15 @@ import {
   ActivityIndicator,
   Pressable,
   ScrollView,
-  Animated,
 } from 'react-native';
-import { BarChart, LineChart } from 'react-native-chart-kit';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
 import { ApiService } from '@/services/api';
-import { formatPKR, getTodayDateStr } from '@/utils/format';
+import { formatPKR } from '@/utils/format';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const CHART_WIDTH = SCREEN_WIDTH - Spacing.md * 2 - Spacing.md * 2;
+const CHART_WIDTH = SCREEN_WIDTH - Spacing.md * 4;
 
 type TabType = 'week' | 'month';
 
@@ -32,7 +30,7 @@ interface DayData {
 interface SummaryKPI {
   weekCredit: number;
   weekRecovery: number;
-  weekEfficiency: number; // recovery/credit %
+  weekEfficiency: number;
   monthCredit: number;
   monthRecovery: number;
   bestDay: string;
@@ -43,47 +41,8 @@ interface RecoveryAnalysisChartProps {
   userId: string;
 }
 
-// Animated bar component for custom chart
-function AnimatedBar({
-  value,
-  maxValue,
-  color,
-  width,
-  label,
-}: {
-  value: number;
-  maxValue: number;
-  color: string;
-  width: number;
-  label: string;
-}) {
-  const anim = useRef(new Animated.Value(0)).current;
-  const pct = maxValue > 0 ? value / maxValue : 0;
-
-  useEffect(() => {
-    Animated.spring(anim, {
-      toValue: pct,
-      useNativeDriver: false,
-      tension: 60,
-      friction: 10,
-    }).start();
-  }, [value, maxValue]);
-
-  return (
-    <View style={{ alignItems: 'center', width }}>
-      <View style={{ height: 120, justifyContent: 'flex-end', width: width - 8 }}>
-        <Animated.View
-          style={{
-            height: anim.interpolate({ inputRange: [0, 1], outputRange: [2, 120] }),
-            backgroundColor: color,
-            borderTopLeftRadius: 6,
-            borderTopRightRadius: 6,
-          }}
-        />
-      </View>
-      <Text style={styles.barLabel}>{label}</Text>
-    </View>
-  );
+function dateToStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 export const RecoveryAnalysisChart = memo(function RecoveryAnalysisChart({
@@ -94,103 +53,100 @@ export const RecoveryAnalysisChart = memo(function RecoveryAnalysisChart({
   const [monthData, setMonthData] = useState<DayData[]>([]);
   const [kpi, setKpi] = useState<SummaryKPI | null>(null);
   const [loading, setLoading] = useState(true);
-  const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     loadData();
   }, [userId]);
 
-  useEffect(() => {
-    fadeAnim.setValue(0);
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 400,
-      useNativeDriver: true,
-    }).start();
-  }, [activeTab]);
-
   async function loadData() {
     setLoading(true);
     try {
       const now = new Date();
-      const days7: DayData[] = [];
+
+      // === PARALLEL: Fetch ALL days at once (7 for week + 28 for month = 35 days) ===
+      // Week: last 7 days
+      const weekPromises: Promise<{ label: string; credit: number; recovery: number; date: string }>[] = [];
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(now);
+        d.setDate(d.getDate() - i);
+        const dateStr = dateToStr(d);
+        const label = d.toLocaleDateString('en-PK', { weekday: 'short' }).slice(0, 3);
+        weekPromises.push(
+          Promise.all([
+            ApiService.getTransactions({ createdBy: userId, type: 'recovery', date: dateStr, limit: 100 }),
+            ApiService.getTransactions({ orderbookerId: userId, type: 'credit', date: dateStr, limit: 100 }),
+          ]).then(([recRes, credRes]) => ({
+            label,
+            date: dateStr,
+            recovery: recRes.transactions.reduce((s, t) => s + t.amount, 0),
+            credit: credRes.transactions.reduce((s, t) => s + t.amount, 0),
+          })).catch(() => ({ label, date: dateStr, recovery: 0, credit: 0 }))
+        );
+      }
+
+      // Month: last 28 days grouped into 4 weeks
+      const monthPromises: Promise<{ credit: number; recovery: number; date: string }>[] = [];
+      for (let i = 27; i >= 0; i--) {
+        const d = new Date(now);
+        d.setDate(d.getDate() - i);
+        const dateStr = dateToStr(d);
+        monthPromises.push(
+          Promise.all([
+            ApiService.getTransactions({ createdBy: userId, type: 'recovery', date: dateStr, limit: 100 }),
+            ApiService.getTransactions({ orderbookerId: userId, type: 'credit', date: dateStr, limit: 100 }),
+          ]).then(([recRes, credRes]) => ({
+            date: dateStr,
+            recovery: recRes.transactions.reduce((s, t) => s + t.amount, 0),
+            credit: credRes.transactions.reduce((s, t) => s + t.amount, 0),
+          })).catch(() => ({ date: dateStr, recovery: 0, credit: 0 }))
+        );
+      }
+
+      // Wait for ALL requests in parallel (was sequential before = 56 round trips)
+      const [weekResults, monthResults] = await Promise.all([
+        Promise.all(weekPromises),
+        Promise.all(monthPromises),
+      ]);
+
+      // Process week data
       let wCredit = 0;
       let wRecovery = 0;
       let bestDay = '';
       let bestAmt = 0;
-
-      // Last 7 days
-      for (let i = 6; i >= 0; i--) {
-        const d = new Date(now);
-        d.setDate(d.getDate() - i);
-        const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-        const label = d.toLocaleDateString('en-PK', { weekday: 'short' }).slice(0, 3);
-
-        let dayRecovery = 0;
-        let dayCredit = 0;
-
-        try {
-          const [recRes, credRes] = await Promise.all([
-            ApiService.getTransactions({
-              createdBy: userId,
-              type: 'recovery',
-              date: dateStr,
-              limit: 200,
-            }),
-            ApiService.getTransactions({
-              orderbookerId: userId,
-              type: 'credit',
-              date: dateStr,
-              limit: 200,
-            }),
-          ]);
-          dayRecovery = recRes.transactions.reduce((s, t) => s + t.amount, 0);
-          dayCredit = credRes.transactions.reduce((s, t) => s + t.amount, 0);
-        } catch {
-          // 0 for this day
-        }
-
-        days7.push({ label, credit: dayCredit, recovery: dayRecovery, date: dateStr });
-        wCredit += dayCredit;
-        wRecovery += dayRecovery;
-        if (dayRecovery > bestAmt) {
-          bestAmt = dayRecovery;
-          bestDay = label;
+      for (const day of weekResults) {
+        wCredit += day.credit;
+        wRecovery += day.recovery;
+        if (day.recovery > bestAmt) {
+          bestAmt = day.recovery;
+          bestDay = day.label;
         }
       }
 
-      // Last 30 days (grouped by week)
+      // Process month data into 4 weeks
       const weeks4: DayData[] = [];
-      for (let w = 3; w >= 0; w--) {
+      for (let w = 0; w < 4; w++) {
         let wkCredit = 0;
         let wkRecovery = 0;
-        for (let d = 6; d >= 0; d--) {
-          const day = new Date(now);
-          day.setDate(day.getDate() - w * 7 - d);
-          const dateStr = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
-          try {
-            const [rr, cr] = await Promise.all([
-              ApiService.getTransactions({ createdBy: userId, type: 'recovery', date: dateStr, limit: 200 }),
-              ApiService.getTransactions({ orderbookerId: userId, type: 'credit', date: dateStr, limit: 200 }),
-            ]);
-            wkRecovery += rr.transactions.reduce((s, t) => s + t.amount, 0);
-            wkCredit += cr.transactions.reduce((s, t) => s + t.amount, 0);
-          } catch { /* skip */ }
+        for (let d = 0; d < 7; d++) {
+          const idx = w * 7 + d;
+          if (idx < monthResults.length) {
+            wkCredit += monthResults[idx].credit;
+            wkRecovery += monthResults[idx].recovery;
+          }
         }
-        const startD = new Date(now);
-        startD.setDate(startD.getDate() - w * 7 - 6);
+        const startIdx = w * 7;
         weeks4.push({
-          label: `W${4 - w}`,
+          label: `W${w + 1}`,
           credit: wkCredit,
           recovery: wkRecovery,
-          date: startD.toISOString().slice(0, 10),
+          date: monthResults[startIdx]?.date || '',
         });
       }
 
       const mCredit = weeks4.reduce((s, w) => s + w.credit, 0);
       const mRecovery = weeks4.reduce((s, w) => s + w.recovery, 0);
 
-      setWeekData(days7);
+      setWeekData(weekResults);
       setMonthData(weeks4);
       setKpi({
         weekCredit: wCredit,
@@ -285,7 +241,7 @@ export const RecoveryAnalysisChart = memo(function RecoveryAnalysisChart({
           <Text style={styles.loadingText}>Loading analysis...</Text>
         </View>
       ) : (
-        <Animated.View style={{ opacity: fadeAnim }}>
+        <View>
           {/* Legend */}
           <View style={styles.legend}>
             <View style={styles.legendItem}>
@@ -298,7 +254,7 @@ export const RecoveryAnalysisChart = memo(function RecoveryAnalysisChart({
             </View>
           </View>
 
-          {/* Custom bar chart */}
+          {/* Static bar chart - no heavy animations */}
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chartScroll}>
             <View style={styles.chartArea}>
               {/* Y-axis labels */}
@@ -324,27 +280,19 @@ export const RecoveryAnalysisChart = memo(function RecoveryAnalysisChart({
                   />
                 ))}
 
-                {currentData.map((item, idx) => (
-                  <View key={idx} style={[styles.barGroup, { width: barGroupWidth }]}>
-                    <View style={styles.barPair}>
-                      <AnimatedBar
-                        value={item.credit}
-                        maxValue={maxVal}
-                        color={Colors.secondary}
-                        width={Math.floor(barGroupWidth * 0.44)}
-                        label=""
-                      />
-                      <AnimatedBar
-                        value={item.recovery}
-                        maxValue={maxVal}
-                        color={Colors.primary}
-                        width={Math.floor(barGroupWidth * 0.44)}
-                        label=""
-                      />
+                {currentData.map((item, idx) => {
+                  const creditPct = maxVal > 0 ? (item.credit / maxVal) * 100 : 0;
+                  const recoveryPct = maxVal > 0 ? (item.recovery / maxVal) * 100 : 0;
+                  return (
+                    <View key={idx} style={[styles.barGroup, { width: barGroupWidth }]}>
+                      <View style={styles.barPair}>
+                        <View style={[styles.staticBar, { height: `${Math.max(creditPct, item.credit > 0 ? 6 : 2)}%`, backgroundColor: Colors.secondary }]} />
+                        <View style={[styles.staticBar, { height: `${Math.max(recoveryPct, item.recovery > 0 ? 6 : 2)}%`, backgroundColor: Colors.primary }]} />
+                      </View>
+                      <Text style={styles.barGroupLabel}>{item.label}</Text>
                     </View>
-                    <Text style={styles.barGroupLabel}>{item.label}</Text>
-                  </View>
-                ))}
+                  );
+                })}
               </View>
             </View>
           </ScrollView>
@@ -387,7 +335,7 @@ export const RecoveryAnalysisChart = memo(function RecoveryAnalysisChart({
                   </Text>
                 </View>
                 <View style={styles.efficiencyTrack}>
-                  <Animated.View
+                  <View
                     style={[
                       styles.efficiencyFill,
                       {
@@ -396,7 +344,6 @@ export const RecoveryAnalysisChart = memo(function RecoveryAnalysisChart({
                       },
                     ]}
                   />
-                  {/* 80% marker */}
                   <View style={[styles.efficiencyMarker, { left: '80%' }]}>
                     <Text style={styles.efficiencyMarkerLabel}>80%</Text>
                   </View>
@@ -411,7 +358,7 @@ export const RecoveryAnalysisChart = memo(function RecoveryAnalysisChart({
               </View>
             </View>
           ) : null}
-        </Animated.View>
+        </View>
       )}
     </View>
   );
@@ -572,16 +519,18 @@ const styles = StyleSheet.create({
     height: 120,
     gap: 2,
   },
+  staticBar: {
+    flex: 1,
+    borderTopLeftRadius: 6,
+    borderTopRightRadius: 6,
+    minWidth: 4,
+  },
   barGroupLabel: {
     fontSize: 10,
     color: Colors.textSecondary,
     marginTop: 4,
     fontWeight: FontWeight.medium,
     height: 16,
-  },
-  barLabel: {
-    fontSize: 9,
-    color: Colors.textMuted,
   },
   loadingBox: {
     height: 200,

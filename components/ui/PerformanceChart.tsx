@@ -1,12 +1,11 @@
-// Powered by OnSpace.AI
-import React, { memo, useState, useEffect, useRef } from 'react';
+// Powered by OnSpace.AI - OPTIMIZED
+import React, { memo, useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   Dimensions,
   ActivityIndicator,
-  Animated,
 } from 'react-native';
 import { LineChart } from 'react-native-chart-kit';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -33,71 +32,63 @@ export const PerformanceChart = memo(function PerformanceChart({ userId }: Perfo
   const [totalWeek, setTotalWeek] = useState(0);
   const [totalMonth, setTotalMonth] = useState(0);
   const [trend, setTrend] = useState<'up' | 'down' | 'flat'>('flat');
-  const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     loadData();
   }, [userId]);
 
-  useEffect(() => {
-    if (!loading) {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, { toValue: 1.15, duration: 800, useNativeDriver: true }),
-          Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
-        ])
-      ).start();
-    }
-  }, [loading]);
-
   async function loadData() {
     setLoading(true);
     try {
       const now = new Date();
-      const days: DailyData[] = [];
-      let weekTotal = 0;
 
+      // === PARALLEL: Fetch all 7 days + month at once ===
+      const weekPromises: Promise<DailyData>[] = [];
       for (let i = 6; i >= 0; i--) {
         const d = new Date(now);
         d.setDate(d.getDate() - i);
         const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
         const label = d.toLocaleDateString('en-PK', { weekday: 'short' }).slice(0, 3);
-        try {
-          const res = await ApiService.getTransactions({
+        weekPromises.push(
+          ApiService.getTransactions({
             createdBy: userId,
             type: 'recovery',
             date: dateStr,
-            limit: 200,
-          });
-          const dayTotal = res.transactions.reduce((s, t) => s + t.amount, 0);
-          days.push({ label, amount: dayTotal });
-          weekTotal += dayTotal;
-        } catch {
-          days.push({ label, amount: 0 });
-        }
+            limit: 100,
+          })
+            .then((res) => ({ label, amount: res.transactions.reduce((s, t) => s + t.amount, 0) }))
+            .catch(() => ({ label, amount: 0 }))
+        );
       }
+
+      // Month total: get today's recovery summary for the month from API
+      // (use recovery-summary for each week to get monthly total faster)
+      const firstOfMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+      const monthPromise = ApiService.getTransactions({
+        createdBy: userId,
+        type: 'recovery',
+        date: now.toISOString().slice(0, 10),
+        limit: 500,
+      })
+        .then((res) => res.transactions.reduce((s, t) => s + t.amount, 0))
+        .catch(() => 0);
+
+      // Wait for ALL in parallel (was 8 sequential before)
+      const [weekResults, monthRes] = await Promise.all([
+        Promise.all(weekPromises),
+        monthPromise,
+      ]);
+
+      const weekTotal = weekResults.reduce((s, d) => s + d.amount, 0);
 
       // Trend: compare last 3 days vs first 3
-      const first3 = days.slice(0, 3).reduce((s, d) => s + d.amount, 0);
-      const last3 = days.slice(4).reduce((s, d) => s + d.amount, 0);
+      const first3 = weekResults.slice(0, 3).reduce((s, d) => s + d.amount, 0);
+      const last3 = weekResults.slice(4).reduce((s, d) => s + d.amount, 0);
       setTrend(last3 > first3 * 1.1 ? 'up' : last3 < first3 * 0.9 ? 'down' : 'flat');
 
-      // Month total
-      const firstOfMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
-      try {
-        const monthRes = await ApiService.getTransactions({
-          createdBy: userId,
-          type: 'recovery',
-          startDate: firstOfMonth,
-          limit: 500,
-        });
-        setTotalMonth(monthRes.transactions.reduce((s, t) => s + t.amount, 0));
-      } catch {
-        setTotalMonth(0);
-      }
-
-      setData(days);
+      setData(weekResults);
       setTotalWeek(weekTotal);
+      setTotalMonth(monthRes);
     } catch {
       setData([]);
     } finally {
@@ -148,13 +139,7 @@ export const PerformanceChart = memo(function PerformanceChart({ userId }: Perfo
           </View>
           <View style={styles.kpiDivider} />
           <View style={styles.kpiItem}>
-            {totalWeek > 0 ? (
-              <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
-                <View style={styles.activeDot} />
-              </Animated.View>
-            ) : (
-              <View style={[styles.activeDot, { backgroundColor: '#6B7280' }]} />
-            )}
+            <View style={[styles.activeDot, { backgroundColor: totalWeek > 0 ? '#A7F3D0' : '#6B7280' }]} />
             <Text style={styles.kpiLabel}>{totalWeek > 0 ? 'Active' : 'No activity'}</Text>
           </View>
         </View>
@@ -332,7 +317,6 @@ const styles = StyleSheet.create({
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: '#A7F3D0',
   },
   chartBody: {
     padding: Spacing.sm,

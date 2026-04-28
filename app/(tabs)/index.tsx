@@ -1,5 +1,5 @@
 // Powered by OnSpace.AI
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -217,14 +217,16 @@ export default function TodayRouteScreen() {
     setVisitedShopIds((prev) => new Set([...prev, shopId]));
   };
 
-  const filteredShops = searchQuery.trim()
-    ? todayShops.filter(
-        (s) =>
-          s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          s.area.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          s.ownerName.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    : todayShops;
+  const filteredShops = useMemo(() => {
+    if (!searchQuery.trim()) return todayShops;
+    const q = searchQuery.toLowerCase();
+    return todayShops.filter(
+      (s) =>
+        s.name.toLowerCase().includes(q) ||
+        s.area.toLowerCase().includes(q) ||
+        s.ownerName.toLowerCase().includes(q)
+    );
+  }, [todayShops, searchQuery]);
 
   const totalOutstanding = todayShops.reduce((sum, s) => sum + s.balance, 0);
   const visitedCount = visitedShopIds.size;
@@ -463,7 +465,7 @@ export default function TodayRouteScreen() {
               </View>
             ) : null
           }
-          renderItem={({ item }) => (
+          renderItem={useCallback(({ item }: { item: Shop }) => (
             <ShopCard
               shop={item}
               isVisited={visitedShopIds.has(item.id)}
@@ -471,7 +473,7 @@ export default function TodayRouteScreen() {
               onPress={() => setDetailShop(item)}
               onGpsVisit={() => setGpsVisitShop(item)}
             />
-          )}
+          ), [visitedShopIds])}
           contentContainerStyle={styles.listContent}
         />
       )}
@@ -519,29 +521,16 @@ export default function TodayRouteScreen() {
         } : null}
         onDone={(method: NotificationMethod) => {
           setNotifChoice((s) => ({ ...s, visible: false }));
-          if (method === 'sms') {
-            setSmsSentCount((c) => c + 1);
-            // Remove from pending when sent via SMS
-            const today = getTodayDateStr();
-            StorageService.getPendingNotifications(today).then((list) => {
-              const last = list.find((n) => n.shopName === notifChoice.shopName);
-              if (last) {
-                StorageService.removePendingNotification(last.id);
-                loadPendingNotifications();
-              }
-            });
-          } else if (method === 'whatsapp') {
-            setWhatsappSentCount((c) => c + 1);
-            // Remove from pending when sent via WhatsApp
-            const today = getTodayDateStr();
-            StorageService.getPendingNotifications(today).then((list) => {
-              const last = list.find((n) => n.shopName === notifChoice.shopName);
-              if (last) {
-                StorageService.removePendingNotification(last.id);
-                loadPendingNotifications();
-              }
-            });
-          }
+          if (method === 'sms') setSmsSentCount((c) => c + 1);
+          else if (method === 'whatsapp') setWhatsappSentCount((c) => c + 1);
+          // Remove from pending list
+          StorageService.getPendingNotifications(getTodayDateStr()).then((list) => {
+            const entry = list.find((n) => n.shopName === notifChoice.shopName);
+            if (entry) {
+              StorageService.removePendingNotification(entry.id);
+              loadPendingNotifications();
+            }
+          });
         }}
       />
       <DailyReportCard
