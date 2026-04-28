@@ -41,6 +41,12 @@
         {
           "locationAlwaysAndWhenInUsePermission": "Allow AlFalah Traders to access your location for GPS verification during recovery collection."
         }
+      ],
+      [
+        "./plugins/withDirectSms.js",
+        {
+          "sendSmsPermission": "Allow AlFalah Traders to send SMS notifications for recovery updates."
+        }
       ]
     ],
     "experiments": {

@@ -134,8 +134,8 @@ export default function TodayRouteScreen() {
         setTodayRecovery((prev) => prev + payload.amount);
         setSuccessState({ visible: true, shopName, amount: payload.amount, isOffline: false });
 
-        // Send SMS after successful recovery (non-blocking)
-        if (payload.markGpsVisit && shopPhone) {
+        // Send SMS after successful recovery (non-blocking, direct send)
+        if (shopPhone) {
           const remainingBalance = openingBalance - payload.amount;
           sendRecoverySms({
             shopPhone,
