@@ -89,3 +89,48 @@ Stage Summary:
   - NEW: components/ui/DailyReportCard.tsx
   - MODIFIED: app/(tabs)/index.tsx (tracking + report integration)
   - MODIFIED: package.json (react-native-view-shot)
+
+---
+Task ID: 4
+Agent: Main
+Task: Add Pending Messages Feature - Send recovery notifications later for unmatched shops
+
+Work Log:
+- Updated services/storage.ts:
+  - Added PendingNotification interface with shop details, amounts, date tracking
+  - Added addPendingNotification() - saves with duplicate prevention per shopId+date
+  - Added getPendingNotifications(date?) - filter by today's date
+  - Added removePendingNotification(id) - remove after sending
+  - Added clearPendingNotifications(date?) - bulk clear
+- Created components/ui/PendingMessagesSheet.tsx:
+  - Beautiful bottom sheet with slide-up animation
+  - Shows list of shops where recovery was added but no notification sent
+  - Each shop has SMS and WhatsApp send buttons
+  - Red badge count, warning note about compulsory notifications
+  - Empty state when all messages are sent
+  - Refresh and Close buttons
+- Updated app/(tabs)/index.tsx:
+  - Added "Pending" button in hero header with red count dot when pending > 0
+  - Recovery submit now saves to pending list BEFORE showing notification popup
+  - When user sends via popup (SMS/WhatsApp), item is removed from pending list
+  - PendingMessagesSheet integrated with handlers
+  - loadPendingNotifications() called on mount and refresh
+- Updated components/ui/DailyReportCard.tsx:
+  - Added pendingMessages prop
+  - Shows yellow warning badge when pending messages exist
+  - Updated "Total Notifications Sent" text
+
+Stage Summary:
+- Pending Messages feature implemented:
+  1. When recovery is added, shop goes to "pending" list
+  2. Mandatory popup (SMS/WhatsApp) removes from pending when sent
+  3. "Pending" button in header shows count of unsent notifications
+  4. Pending sheet allows sending messages later (batch send)
+  5. Daily Report shows pending count warning
+- User's use case solved: "10 shops Sy recovery li or 8 ko msg kia" → remaining 2 show in Pending
+- Key files:
+  - NEW: components/ui/PendingMessagesSheet.tsx
+  - MODIFIED: services/storage.ts (PendingNotification tracking)
+  - MODIFIED: app/(tabs)/index.tsx (pending badge + sheet integration)
+  - MODIFIED: components/ui/DailyReportCard.tsx (pending warning)
+

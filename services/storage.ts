@@ -1,6 +1,6 @@
 // Powered by OnSpace.AI
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { User, Shop, Transaction } from './api';
+import { User, Shop } from './api';
 
 const KEYS = {
   USER: 'af_user',
@@ -8,7 +8,21 @@ const KEYS = {
   SHOPS: 'af_shops',
   OFFLINE_QUEUE: 'af_offline_queue',
   LAST_SYNC: 'af_last_sync',
+  PENDING_NOTIFICATIONS: 'af_pending_notifications',
 };
+
+export interface PendingNotification {
+  id: string; // unique: shopId + timestamp
+  shopId: string;
+  shopName: string;
+  shopPhone: string;
+  area: string;
+  openingBalance: number;
+  recoveryAmount: number;
+  remainingBalance: number;
+  createdAt: string;
+  date: string; // YYYY-MM-DD for daily grouping
+}
 
 export interface OfflineRecovery {
   localId: string;
@@ -79,5 +93,47 @@ export const StorageService = {
 
   clearOfflineQueue: async () => {
     await AsyncStorage.setItem(KEYS.OFFLINE_QUEUE, JSON.stringify([]));
+  },
+
+  // --- Pending Notifications Tracking ---
+  addPendingNotification: async (notification: PendingNotification) => {
+    const raw = await AsyncStorage.getItem(KEYS.PENDING_NOTIFICATIONS);
+    const list: PendingNotification[] = raw ? JSON.parse(raw) : [];
+    // Avoid duplicates by same shopId on same date
+    const exists = list.some(
+      (n) => n.shopId === notification.shopId && n.date === notification.date
+    );
+    if (!exists) {
+      list.push(notification);
+      await AsyncStorage.setItem(KEYS.PENDING_NOTIFICATIONS, JSON.stringify(list));
+    }
+  },
+
+  getPendingNotifications: async (date?: string): Promise<PendingNotification[]> => {
+    const raw = await AsyncStorage.getItem(KEYS.PENDING_NOTIFICATIONS);
+    const list: PendingNotification[] = raw ? JSON.parse(raw) : [];
+    if (date) {
+      // Return only today's pending notifications
+      return list.filter((n) => n.date === date);
+    }
+    return list;
+  },
+
+  removePendingNotification: async (id: string) => {
+    const raw = await AsyncStorage.getItem(KEYS.PENDING_NOTIFICATIONS);
+    const list: PendingNotification[] = raw ? JSON.parse(raw) : [];
+    const filtered = list.filter((n) => n.id !== id);
+    await AsyncStorage.setItem(KEYS.PENDING_NOTIFICATIONS, JSON.stringify(filtered));
+  },
+
+  clearPendingNotifications: async (date?: string) => {
+    if (date) {
+      const raw = await AsyncStorage.getItem(KEYS.PENDING_NOTIFICATIONS);
+      const list: PendingNotification[] = raw ? JSON.parse(raw) : [];
+      const filtered = list.filter((n) => n.date !== date);
+      await AsyncStorage.setItem(KEYS.PENDING_NOTIFICATIONS, JSON.stringify(filtered));
+    } else {
+      await AsyncStorage.setItem(KEYS.PENDING_NOTIFICATIONS, JSON.stringify([]));
+    }
   },
 };

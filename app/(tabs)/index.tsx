@@ -28,6 +28,8 @@ import { PerformanceChart } from '@/components/ui/PerformanceChart';
 import { RecoveryAnalysisChart } from '@/components/ui/RecoveryAnalysisChart';
 import { NotificationChoice, NotificationMethod } from '@/components/ui/NotificationChoice';
 import { DailyReportCard } from '@/components/ui/DailyReportCard';
+import { PendingMessagesSheet } from '@/components/ui/PendingMessagesSheet';
+import { StorageService, PendingNotification } from '@/services/storage';
 
 type ChartView = 'trend' | 'analysis' | 'none';
 
@@ -72,6 +74,8 @@ export default function TodayRouteScreen() {
   const [smsSentCount, setSmsSentCount] = useState(0);
   const [whatsappSentCount, setWhatsappSentCount] = useState(0);
   const [showReport, setShowReport] = useState(false);
+  const [showPending, setShowPending] = useState(false);
+  const [pendingNotifications, setPendingNotifications] = useState<PendingNotification[]>([]);
 
   const todayDay = getTodayDayName();
   const isFriday = todayDay === 'friday';
@@ -80,8 +84,17 @@ export default function TodayRouteScreen() {
     if (user) {
       loadTodayShops(user.id);
       loadTodayStats();
+      loadPendingNotifications();
     }
   }, [user]);
+
+  async function loadPendingNotifications() {
+    try {
+      const today = getTodayDateStr();
+      const list = await StorageService.getPendingNotifications(today);
+      setPendingNotifications(list);
+    } catch { /* not critical */ }
+  }
 
   async function loadTodayStats() {
     if (!user) return;
@@ -146,9 +159,24 @@ export default function TodayRouteScreen() {
         setTodayRecovery((prev) => prev + payload.amount);
         setSuccessState({ visible: true, shopName, amount: payload.amount, isOffline: false });
 
-        // Show mandatory notification choice popup (SMS or WhatsApp)
+        // Save pending notification (will be removed when user sends)
         if (shopPhone) {
           const remainingBalance = openingBalance - payload.amount;
+          const pendingNotif: PendingNotification = {
+            id: `${shopId}_${Date.now()}`,
+            shopId,
+            shopName,
+            shopPhone,
+            area: recoveryShop.area,
+            openingBalance,
+            recoveryAmount: payload.amount,
+            remainingBalance,
+            createdAt: new Date().toISOString(),
+            date: getTodayDateStr(),
+          };
+          await StorageService.addPendingNotification(pendingNotif);
+          loadPendingNotifications();
+
           setNotifChoice({
             visible: true,
             shopPhone,
@@ -261,6 +289,22 @@ export default function TodayRouteScreen() {
                   <Pressable style={styles.reportBadge} onPress={() => setShowReport(true)} hitSlop={8}>
                     <MaterialIcons name="assessment" size={14} color="rgba(255,255,255,0.9)" />
                     <Text style={styles.heroDayText}>Report</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[
+                      styles.pendingBadge,
+                      pendingNotifications.length > 0 && styles.pendingBadgeActive,
+                    ]}
+                    onPress={() => setShowPending(true)}
+                    hitSlop={8}
+                  >
+                    <MaterialIcons name="pending-actions" size={14} color="rgba(255,255,255,0.9)" />
+                    <Text style={styles.heroDayText}>Pending</Text>
+                    {pendingNotifications.length > 0 ? (
+                      <View style={styles.pendingCountDot}>
+                        <Text style={styles.pendingCountText}>{pendingNotifications.length}</Text>
+                      </View>
+                    ) : null}
                   </Pressable>
                 </View>
 
@@ -475,8 +519,29 @@ export default function TodayRouteScreen() {
         } : null}
         onDone={(method: NotificationMethod) => {
           setNotifChoice((s) => ({ ...s, visible: false }));
-          if (method === 'sms') setSmsSentCount((c) => c + 1);
-          else if (method === 'whatsapp') setWhatsappSentCount((c) => c + 1);
+          if (method === 'sms') {
+            setSmsSentCount((c) => c + 1);
+            // Remove from pending when sent via SMS
+            const today = getTodayDateStr();
+            StorageService.getPendingNotifications(today).then((list) => {
+              const last = list.find((n) => n.shopName === notifChoice.shopName);
+              if (last) {
+                StorageService.removePendingNotification(last.id);
+                loadPendingNotifications();
+              }
+            });
+          } else if (method === 'whatsapp') {
+            setWhatsappSentCount((c) => c + 1);
+            // Remove from pending when sent via WhatsApp
+            const today = getTodayDateStr();
+            StorageService.getPendingNotifications(today).then((list) => {
+              const last = list.find((n) => n.shopName === notifChoice.shopName);
+              if (last) {
+                StorageService.removePendingNotification(last.id);
+                loadPendingNotifications();
+              }
+            });
+          }
         }}
       />
       <DailyReportCard
@@ -487,7 +552,24 @@ export default function TodayRouteScreen() {
         totalRecovery={todayRecovery}
         smsSent={smsSentCount}
         whatsappSent={whatsappSentCount}
+        pendingMessages={pendingNotifications.length}
         orderbookerName={user?.name || 'Orderbooker'}
+      />
+      <PendingMessagesSheet
+        visible={showPending}
+        pendingList={pendingNotifications}
+        onSendSms={(id) => {
+          StorageService.removePendingNotification(id);
+          loadPendingNotifications();
+          setSmsSentCount((c) => c + 1);
+        }}
+        onSendWhatsapp={(id) => {
+          StorageService.removePendingNotification(id);
+          loadPendingNotifications();
+          setWhatsappSentCount((c) => c + 1);
+        }}
+        onClose={() => setShowPending(false)}
+        onRefresh={loadPendingNotifications}
       />
     </View>
   );
@@ -565,6 +647,35 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderWidth: 1,
     borderColor: 'rgba(250,204,21,0.4)',
+  },
+  pendingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderRadius: Radius.full,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  pendingBadgeActive: {
+    backgroundColor: 'rgba(239,68,68,0.25)',
+    borderColor: 'rgba(239,68,68,0.5)',
+  },
+  pendingCountDot: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#EF4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 2,
+  },
+  pendingCountText: {
+    fontSize: 10,
+    fontWeight: FontWeight.bold,
+    color: '#FFFFFF',
   },
   heroDayText: {
     fontSize: FontSize.xs,

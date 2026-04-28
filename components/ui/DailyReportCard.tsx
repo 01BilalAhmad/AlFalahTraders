@@ -26,6 +26,7 @@ interface DailyReportProps {
   totalRecovery: number;
   smsSent: number;
   whatsappSent: number;
+  pendingMessages: number;
   orderbookerName: string;
 }
 
@@ -37,6 +38,7 @@ export function DailyReportCard({
   totalRecovery,
   smsSent,
   whatsappSent,
+  pendingMessages,
   orderbookerName,
 }: DailyReportProps) {
   const cardRef = useRef<ViewShot>(null);
@@ -151,9 +153,21 @@ export function DailyReportCard({
             <View style={styles.totalBadge}>
               <MaterialIcons name="notifications-active" size={16} color="rgba(255,255,255,0.9)" />
               <Text style={styles.totalBadgeText}>
-                {totalMessages} Total Notifications Sent
+                {totalMessages} Notifications Sent
               </Text>
             </View>
+
+            {/* Pending Messages Warning */}
+            {pendingMessages > 0 ? (
+              <View style={styles.pendingWarning}>
+                <View style={styles.pendingWarningIconWrap}>
+                  <MaterialIcons name="warning" size={14} color="#FACC15" />
+                </View>
+                <Text style={styles.pendingWarningText}>
+                  {pendingMessages} message{pendingMessages > 1 ? 's' : ''} still pending!
+                </Text>
+              </View>
+            ) : null}
 
             {/* Footer */}
             <View style={styles.footer}>
@@ -385,6 +399,32 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: Spacing.md,
     marginTop: Spacing.lg,
+  },
+  pendingWarning: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(250,204,21,0.15)',
+    borderRadius: Radius.full,
+    paddingVertical: 6,
+    paddingHorizontal: Spacing.md,
+    marginBottom: Spacing.sm,
+    borderWidth: 1,
+    borderColor: 'rgba(250,204,21,0.3)',
+  },
+  pendingWarningIconWrap: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(250,204,21,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pendingWarningText: {
+    fontSize: FontSize.xs,
+    fontWeight: FontWeight.bold,
+    color: '#FACC15',
   },
   shareBtn: {
     flex: 1,
