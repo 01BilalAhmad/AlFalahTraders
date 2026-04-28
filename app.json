@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "onspace-app",
+    "name": "Al FALAH Credit System",
     "slug": "onspace-app",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -39,13 +39,13 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "Allow AlFalah Traders to access your location for GPS verification during recovery collection."
+          "locationAlwaysAndWhenInUsePermission": "Allow Al FALAH Credit System to access your location for GPS verification during recovery collection."
         }
       ],
       [
         "./plugins/withDirectSms.js",
         {
-          "sendSmsPermission": "Allow AlFalah Traders to send SMS notifications for recovery updates."
+          "sendSmsPermission": "Allow Al FALAH Credit System to send SMS notifications for recovery updates."
         }
       ]
     ],

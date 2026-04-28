@@ -88,7 +88,7 @@ export function DailyReportCard({
                 <MaterialIcons name="store" size={24} color="#FFFFFF" />
               </View>
               <View style={styles.headerText}>
-                <Text style={styles.brandName}>AlFalah Traders</Text>
+                <Text style={styles.brandName}>Al FALAH Credit System</Text>
                 <Text style={styles.headerSub}>Daily Recovery Report</Text>
               </View>
             </View>
@@ -173,7 +173,7 @@ export function DailyReportCard({
             <View style={styles.footer}>
               <View style={styles.footerLine} />
               <Text style={styles.footerText}>
-                Powered by OnSpace.AI • {todayLabel}
+                Al FALAH Credit System • {todayLabel}
               </Text>
             </View>
           </LinearGradient>

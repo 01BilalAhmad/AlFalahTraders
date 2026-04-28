@@ -85,7 +85,7 @@ function generateLedgerHtml(data: LedgerResponse): string {
     <body>
       <div class="page">
         <div class="header">
-          <h1>AlFalah Traders</h1>
+          <h1>Al FALAH Credit System</h1>
           <p>Customer Account Statement (Ledger)</p>
           <p style="margin-top:8px;opacity:0.7;font-size:11px;">Generated: ${generatedDate}</p>
         </div>
@@ -137,7 +137,7 @@ function generateLedgerHtml(data: LedgerResponse): string {
         ` : '<p style="text-align:center;color:#9CA3AF;padding:32px;">No transactions found</p>'}
 
         <div class="footer">
-          AlFalah Traders — Powered by OnSpace.AI<br>
+          Al FALAH Credit System<br>
           This is a system-generated document.
         </div>
       </div>

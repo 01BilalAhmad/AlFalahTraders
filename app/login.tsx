@@ -82,8 +82,8 @@ export default function LoginScreen() {
               contentFit="contain"
             />
           </View>
-          <Text style={styles.appTitle}>Al-Falah Traders</Text>
-          <Text style={styles.appSubtitle}>Order Booker Portal</Text>
+          <Text style={styles.appTitle}>Al FALAH Credit System</Text>
+          <Text style={styles.appSubtitle}>Order Bookers Portal</Text>
         </View>
 
         {/* Card */}
@@ -156,7 +156,7 @@ export default function LoginScreen() {
 
         {/* Footer */}
         <Text style={styles.footer}>
-          Al-Falah Traders © 2025
+          Al FALAH Credit System © 2025
         </Text>
       </ScrollView>
     </KeyboardAvoidingView>

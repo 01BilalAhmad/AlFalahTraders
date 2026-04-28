@@ -23,7 +23,7 @@ export function buildRecoveryMessage(
     year: 'numeric',
   });
 
-  return `AlFalah Traders - Recovery Update\n\n`
+  return `Al FALAH Credit System - Recovery Update\n\n`
     + `Dear ${shopName},\n\n`
     + `Your account has been updated:\n\n`
     + `Opening Balance: ${formatPKR(openingBalance)}\n`
@@ -31,7 +31,7 @@ export function buildRecoveryMessage(
     + `Remaining Balance: ${formatPKR(remainingBalance)}\n\n`
     + `Date: ${today}\n\n`
     + `Thank you for your payment!\n`
-    + `AlFalah Traders`;
+    + `Al FALAH Credit System`;
 }
 
 /**

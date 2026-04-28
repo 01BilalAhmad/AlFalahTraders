@@ -1,5 +1,5 @@
 // Powered by OnSpace.AI
-// Offline-First Sync Engine for Al-Falah Traders
+// Offline-First Sync Engine for Al FALAH Credit System
 import NetInfo, { NetInfoState } from '@react-native-community/netinfo';
 import { StorageService, OfflineRecovery } from './storage';
 import { ApiService } from './api';

@@ -38,7 +38,7 @@ function buildMessage(shopName: string, openingBalance: number, recoveryAmount: 
     year: 'numeric',
   });
 
-  return `AlFalah Traders - Recovery Update\n\n`
+  return `Al FALAH Credit System - Recovery Update\n\n`
     + `Dear ${shopName},\n\n`
     + `Your account has been updated:\n\n`
     + `Opening Balance: ${formatPKR(openingBalance)}\n`
@@ -46,7 +46,7 @@ function buildMessage(shopName: string, openingBalance: number, recoveryAmount: 
     + `Remaining Balance: ${formatPKR(remainingBalance)}\n\n`
     + `Date: ${today}\n\n`
     + `Thank you for your payment!\n`
-    + `AlFalah Traders`;
+    + `Al FALAH Credit System`;
 }
 
 export async function sendRecoverySms(payload: SmsPayload): Promise<boolean> {
