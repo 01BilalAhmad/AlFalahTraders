@@ -26,6 +26,7 @@ import { SuccessOverlay } from '@/components/ui/SuccessOverlay';
 import { OfflineBanner } from '@/components/ui/OfflineBanner';
 import { PerformanceChart } from '@/components/ui/PerformanceChart';
 import { RecoveryAnalysisChart } from '@/components/ui/RecoveryAnalysisChart';
+import { sendRecoverySms } from '@/utils/sendRecoverySms';
 
 type ChartView = 'trend' | 'analysis' | 'none';
 
@@ -109,11 +110,14 @@ export default function TodayRouteScreen() {
     gpsLat?: number;
     gpsLng?: number;
     gpsAddress?: string;
+    markGpsVisit: boolean;
   }) => {
     if (!recoveryShop || !user) return;
     setIsSubmitting(true);
     const shopName = recoveryShop.name;
     const shopId = recoveryShop.id;
+    const shopPhone = recoveryShop.phone;
+    const openingBalance = recoveryShop.balance;
     try {
       if (isOnline) {
         await ApiService.submitRecovery({
@@ -129,6 +133,20 @@ export default function TodayRouteScreen() {
         setVisitedShopIds((prev) => new Set([...prev, shopId]));
         setTodayRecovery((prev) => prev + payload.amount);
         setSuccessState({ visible: true, shopName, amount: payload.amount, isOffline: false });
+
+        // Send SMS after successful recovery (non-blocking)
+        if (payload.markGpsVisit && shopPhone) {
+          const remainingBalance = openingBalance - payload.amount;
+          sendRecoverySms({
+            shopPhone,
+            shopName,
+            openingBalance,
+            recoveryAmount: payload.amount,
+            remainingBalance,
+          }).catch(() => {
+            // SMS failure should not affect the recovery flow
+          });
+        }
       } else {
         await addToOfflineQueue({
           localId: `local_${Date.now()}`,
@@ -142,6 +160,10 @@ export default function TodayRouteScreen() {
           createdBy: user.id,
           createdAt: new Date().toISOString(),
         });
+        // Mark GPS visit even when offline
+        if (payload.markGpsVisit) {
+          setVisitedShopIds((prev) => new Set([...prev, shopId]));
+        }
         setSuccessState({ visible: true, shopName, amount: payload.amount, isOffline: true });
       }
       setRecoveryShop(null);

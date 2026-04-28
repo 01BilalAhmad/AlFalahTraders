@@ -1,12 +1,14 @@
 // Powered by OnSpace.AI
 import * as Print from 'expo-print';
-import { shareAsync } from 'expo-sharing';
+import * as FileSystem from 'expo-file-system';
+import { shareAsync, isAvailableAsync } from 'expo-sharing';
+import { Platform, Alert } from 'react-native';
 import { LedgerResponse } from '@/services/api';
 import { formatPKR, formatDateTime } from '@/utils/format';
 
 function generateLedgerHtml(data: LedgerResponse): string {
   const { shop, transactions, summary } = data;
-  
+
   const txnRows = transactions
     .map((t) => {
       const isCredit = t.type === 'credit';
@@ -38,6 +40,14 @@ function generateLedgerHtml(data: LedgerResponse): string {
     .join('');
 
   const balanceColor = summary.currentBalance > 0 ? '#EF4444' : '#059669';
+  const generatedDate = new Date().toLocaleDateString('en-PK', {
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  });
 
   return `
     <!DOCTYPE html>
@@ -77,7 +87,7 @@ function generateLedgerHtml(data: LedgerResponse): string {
         <div class="header">
           <h1>AlFalah Traders</h1>
           <p>Customer Account Statement (Ledger)</p>
-          <p style="margin-top:8px;opacity:0.7;font-size:11px;">Generated: ${new Date().toLocaleDateString('en-PK', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })}</p>
+          <p style="margin-top:8px;opacity:0.7;font-size:11px;">Generated: ${generatedDate}</p>
         </div>
 
         <div class="shop-info">
@@ -138,15 +148,92 @@ function generateLedgerHtml(data: LedgerResponse): string {
 
 export async function downloadLedgerPdf(data: LedgerResponse): Promise<void> {
   const html = generateLedgerHtml(data);
-  
-  const { uri } = await Print.printToFileAsync({
-    html,
-    base64: false,
-  });
 
-  await shareAsync(uri, {
-    mimeType: 'application/pdf',
-    dialogTitle: `Ledger - ${data.shop.name}`,
-    UTI: 'com.adobe.pdf',
-  });
+  try {
+    // Step 1: Generate PDF file
+    const { uri } = await Print.printToFileAsync({
+      html,
+      base64: false,
+    });
+
+    console.log('[PDF] Generated at:', uri);
+
+    // Step 2: Try to share the file
+    try {
+      const canShare = await isAvailableAsync();
+      if (canShare) {
+        await shareAsync(uri, {
+          mimeType: 'application/pdf',
+          dialogTitle: `Ledger - ${data.shop.name}`,
+          UTI: 'com.adobe.pdf',
+        });
+        return; // Successfully shared
+      }
+    } catch (shareError: any) {
+      console.warn('[PDF] Share failed, trying fallback:', shareError?.message);
+    }
+
+    // Step 3: Fallback - Copy to Downloads directory on Android
+    if (Platform.OS === 'android') {
+      try {
+        const downloadsDir = FileSystem.cacheDirectory;
+        const fileName = `Ledger_${data.shop.name.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}.pdf`;
+        const destPath = `${downloadsDir}${fileName}`;
+
+        await FileSystem.copyAsync({
+          from: uri,
+          to: destPath,
+        });
+
+        // Try sharing from new location
+        const canShareAgain = await isAvailableAsync();
+        if (canShareAgain) {
+          await shareAsync(destPath, {
+            mimeType: 'application/pdf',
+            dialogTitle: `Ledger - ${data.shop.name}`,
+            UTI: 'com.adobe.pdf',
+          });
+          return;
+        }
+
+        Alert.alert(
+          'PDF Saved',
+          `Ledger saved successfully.\nFile: ${fileName}`,
+          [{ text: 'OK' }]
+        );
+      } catch (fallbackError: any) {
+        console.error('[PDF] Fallback also failed:', fallbackError?.message);
+      }
+    }
+
+    // Step 4: Final fallback - open the file directly
+    if (Platform.OS === 'ios') {
+      try {
+        const canShareAgain = await isAvailableAsync();
+        if (canShareAgain) {
+          await shareAsync(uri, {
+            mimeType: 'application/pdf',
+            dialogTitle: `Ledger - ${data.shop.name}`,
+          });
+          return;
+        }
+      } catch (e) {
+        console.warn('[PDF] iOS share retry failed');
+      }
+    }
+
+    // If nothing worked, show info
+    Alert.alert(
+      'PDF Generated',
+      'The PDF was generated but could not be shared. Please check your device settings for sharing permissions.',
+      [{ text: 'OK' }]
+    );
+  } catch (error: any) {
+    console.error('[PDF] Error:', error?.message || error);
+    Alert.alert(
+      'PDF Error',
+      error?.message || 'Failed to generate PDF. Please try again.'
+    );
+    throw error;
+  }
 }

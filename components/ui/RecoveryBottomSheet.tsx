@@ -14,10 +14,12 @@ import {
   Alert,
   Dimensions,
   Animated,
+  Switch,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
 import { Shop } from '@/services/api';
@@ -36,6 +38,7 @@ interface RecoveryBottomSheetProps {
     gpsLat?: number;
     gpsLng?: number;
     gpsAddress?: string;
+    markGpsVisit: boolean;
   }) => Promise<void>;
   isSubmitting: boolean;
 }
@@ -48,7 +51,7 @@ function getOsmStaticUrl(lat: number, lng: number): string {
 // Animated pulse for GPS indicator
 function GpsPulse({ active }: { active: boolean }) {
   const scale = React.useRef(new Animated.Value(1)).current;
-  
+
   React.useEffect(() => {
     if (!active) return;
     const animation = Animated.loop(
@@ -133,6 +136,50 @@ const confettiStyles = StyleSheet.create({
   },
 });
 
+// Animated success checkmark
+function SuccessCheckmark({ visible }: { visible: boolean }) {
+  const scaleAnim = useRef(new Animated.Value(0)).current;
+  const opacityAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (visible) {
+      Animated.parallel([
+        Animated.spring(scaleAnim, { toValue: 1, useNativeDriver: true, tension: 100, friction: 8 }),
+        Animated.timing(opacityAnim, { toValue: 1, duration: 300, useNativeDriver: true }),
+      ]).start();
+    } else {
+      scaleAnim.setValue(0);
+      opacityAnim.setValue(0);
+    }
+  }, [visible]);
+
+  if (!visible) return null;
+
+  return (
+    <Animated.View style={[successStyles.container, { opacity: opacityAnim, transform: [{ scale: scaleAnim }] }]}>
+      <LinearGradient colors={['#059669', '#047857']} style={successStyles.badge}>
+        <MaterialIcons name="check" size={28} color="#FFFFFF" />
+      </LinearGradient>
+    </Animated.View>
+  );
+}
+const successStyles = StyleSheet.create({
+  container: {
+    position: 'absolute',
+    top: -20,
+    alignSelf: 'center',
+    zIndex: 50,
+  },
+  badge: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...Shadow.lg,
+  },
+});
+
 export function RecoveryBottomSheet({
   visible,
   shop,
@@ -149,10 +196,12 @@ export function RecoveryBottomSheet({
   const [mapLoading, setMapLoading] = useState(false);
   const [focusedField, setFocusedField] = useState<'amount' | 'note' | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [markGpsVisit, setMarkGpsVisit] = useState(true);
 
   // Slide-up animation
   const slideAnim = useRef(new Animated.Value(400)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  const amountScaleAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     if (visible) {
@@ -160,12 +209,27 @@ export function RecoveryBottomSheet({
         Animated.spring(slideAnim, { toValue: 0, useNativeDriver: true, tension: 80, friction: 12 }),
         Animated.timing(fadeAnim, { toValue: 1, duration: 250, useNativeDriver: true }),
       ]).start();
+      // Auto-capture GPS if mark visit is on
+      if (markGpsVisit) {
+        captureGPS();
+      }
     } else {
       slideAnim.setValue(400);
       fadeAnim.setValue(0);
       setShowSuccess(false);
     }
   }, [visible]);
+
+  // Haptic feedback on amount change
+  useEffect(() => {
+    const val = parseInt(amount, 10);
+    if (val > 0) {
+      Animated.sequence([
+        Animated.timing(amountScaleAnim, { toValue: 1.02, duration: 100, useNativeDriver: true }),
+        Animated.timing(amountScaleAnim, { toValue: 1, duration: 100, useNativeDriver: true }),
+      ]).start();
+    }
+  }, [amount]);
 
   const reset = useCallback(() => {
     setAmount('');
@@ -175,6 +239,8 @@ export function RecoveryBottomSheet({
     setGpsAddress(undefined);
     setFocusedField(null);
     setShowSuccess(false);
+    setCapturingGps(false);
+    setMapLoading(false);
   }, []);
 
   const handleClose = () => {
@@ -183,6 +249,7 @@ export function RecoveryBottomSheet({
   };
 
   const handleQuickAmount = (val: number) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setAmount(String(val));
   };
 
@@ -206,11 +273,20 @@ export function RecoveryBottomSheet({
         const parts = [geo.street, geo.district, geo.city].filter(Boolean);
         setGpsAddress(parts.join(', '));
       }
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch {
       Alert.alert('GPS Error', 'Could not get location. Please try again.');
     } finally {
       setCapturingGps(false);
     }
+  };
+
+  const handleToggleGpsVisit = (value: boolean) => {
+    setMarkGpsVisit(value);
+    if (value && !hasGps) {
+      captureGPS();
+    }
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
   const handleSubmit = async () => {
@@ -230,11 +306,20 @@ export function RecoveryBottomSheet({
       );
       return;
     }
-    await onSubmit({ amount: numAmount, description, gpsLat, gpsLng, gpsAddress });
+
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    await onSubmit({
+      amount: numAmount,
+      description,
+      gpsLat: markGpsVisit ? gpsLat : undefined,
+      gpsLng: markGpsVisit ? gpsLng : undefined,
+      gpsAddress: markGpsVisit ? gpsAddress : undefined,
+      markGpsVisit,
+    });
     setShowSuccess(true);
     setTimeout(() => {
       reset();
-    }, 1200);
+    }, 1500);
   };
 
   if (!shop) return null;
@@ -262,6 +347,7 @@ export function RecoveryBottomSheet({
           ]}
         >
           <ConfettiOverlay visible={showSuccess} />
+          <SuccessCheckmark visible={showSuccess} />
 
           {/* Handle */}
           <View style={styles.handle} />
@@ -347,9 +433,10 @@ export function RecoveryBottomSheet({
                 <Text style={styles.sectionTitle}>Amount (PKR) *</Text>
               </View>
 
-              <View style={[
+              <Animated.View style={[
                 styles.amountInputWrap,
                 focusedField === 'amount' && styles.amountInputFocused,
+                { transform: [{ scale: amountScaleAnim }] },
               ]}>
                 <View style={styles.amountCurrencyTag}>
                   <Text style={styles.amountCurrencyText}>Rs.</Text>
@@ -367,13 +454,13 @@ export function RecoveryBottomSheet({
                   autoFocus
                 />
                 {amount ? (
-                  <Pressable onPress={() => setAmount('')} style={styles.amountClear} hitSlop={8}>
+                  <Pressable onPress={() => { setAmount(''); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }} style={styles.amountClear} hitSlop={8}>
                     <MaterialIcons name="backspace" size={20} color={Colors.textMuted} />
                   </Pressable>
                 ) : (
                   <MaterialIcons name="keyboard" size={20} color={Colors.textMuted} />
                 )}
-              </View>
+              </Animated.View>
 
               {/* Validation hint */}
               {amount && numericAmount > 0 && numericAmount < MIN_RECOVERY ? (
@@ -489,6 +576,56 @@ export function RecoveryBottomSheet({
                   </Pressable>
                 ) : null}
               </View>
+            </View>
+
+            {/* GPS Store Visit Toggle - NEW */}
+            <View style={styles.section}>
+              <View style={[styles.gpsVisitCard, markGpsVisit && styles.gpsVisitCardActive]}>
+                <View style={styles.gpsVisitLeft}>
+                  <View style={styles.gpsVisitIconWrap}>
+                    <MaterialIcons
+                      name={markGpsVisit ? 'storefront' : 'storefront'}
+                      size={22}
+                      color={markGpsVisit ? '#059669' : Colors.textMuted}
+                    />
+                  </View>
+                  <View style={styles.gpsVisitTextWrap}>
+                    <Text style={styles.gpsVisitTitle}>GPS Store Visit</Text>
+                    <Text style={styles.gpsVisitSub}>
+                      {markGpsVisit
+                        ? 'GPS will be captured and shop marked as visited'
+                        : 'Shop visit will not be recorded'}
+                    </Text>
+                  </View>
+                </View>
+                <Switch
+                  value={markGpsVisit}
+                  onValueChange={handleToggleGpsVisit}
+                  trackColor={{ false: Colors.border, true: Colors.primaryLight }}
+                  thumbColor={Platform.OS === 'android' ? (markGpsVisit ? Colors.primary : Colors.textMuted) : undefined}
+                  ios_backgroundColor={Colors.border}
+                />
+              </View>
+
+              {/* Show GPS status when toggle is on */}
+              {markGpsVisit && hasGps && (
+                <View style={styles.gpsCapturedMini}>
+                  <GpsPulse active={true} />
+                  <View style={styles.gpsCapturedMiniText}>
+                    <MaterialIcons name="check-circle" size={14} color={Colors.primaryDark} />
+                    <Text style={styles.gpsCapturedMiniLabel}>
+                      GPS Captured · {gpsAddress || `${gpsLat!.toFixed(4)}, ${gpsLng!.toFixed(4)}`}
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+              {markGpsVisit && capturingGps && (
+                <View style={styles.gpsCapturingMini}>
+                  <ActivityIndicator size="small" color={Colors.primary} />
+                  <Text style={styles.gpsCapturingMiniLabel}>Capturing GPS location...</Text>
+                </View>
+              )}
             </View>
 
             {/* GPS section - Modern card style */}
@@ -618,7 +755,10 @@ export function RecoveryBottomSheet({
               <View style={styles.amountPreview}>
                 <View>
                   <Text style={styles.amountPreviewLabel}>Recovery Amount</Text>
-                  <Text style={styles.amountPreviewSub}>This will reduce the outstanding balance</Text>
+                  <Text style={styles.amountPreviewSub}>
+                    This will reduce the outstanding balance
+                    {markGpsVisit ? ' · GPS visit will be marked' : ''}
+                  </Text>
                 </View>
                 <Text style={styles.amountPreviewValue}>{formatPKR(numericAmount)}</Text>
               </View>
@@ -873,6 +1013,85 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: Colors.primaryDark,
     fontWeight: FontWeight.bold,
+  },
+  // GPS Store Visit Toggle
+  gpsVisitCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.md,
+    padding: Spacing.md,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    ...Shadow.sm,
+  },
+  gpsVisitCardActive: {
+    borderColor: Colors.primary,
+  },
+  gpsVisitLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    flex: 1,
+  },
+  gpsVisitIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: Colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  gpsVisitTextWrap: {
+    flex: 1,
+  },
+  gpsVisitTitle: {
+    fontSize: FontSize.base,
+    fontWeight: FontWeight.bold,
+    color: Colors.text,
+  },
+  gpsVisitSub: {
+    fontSize: FontSize.xs,
+    color: Colors.textSecondary,
+    marginTop: 1,
+  },
+  gpsCapturedMini: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    backgroundColor: Colors.primaryLight,
+    borderRadius: Radius.sm,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 8,
+    marginTop: Spacing.sm,
+  },
+  gpsCapturedMiniText: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    flex: 1,
+  },
+  gpsCapturedMiniLabel: {
+    fontSize: FontSize.xs,
+    color: Colors.primaryDark,
+    fontWeight: FontWeight.medium,
+    flex: 1,
+  },
+  gpsCapturingMini: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    backgroundColor: '#FEF3C7',
+    borderRadius: Radius.sm,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 8,
+    marginTop: Spacing.sm,
+  },
+  gpsCapturingMiniLabel: {
+    fontSize: FontSize.xs,
+    color: '#92400E',
+    fontWeight: FontWeight.medium,
   },
   // Amount input
   amountInputWrap: {
@@ -1261,7 +1480,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // Success footer
   successFooter: {
     borderRadius: Radius.md,
     overflow: 'hidden',
