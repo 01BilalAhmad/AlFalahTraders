@@ -61,3 +61,31 @@ Stage Summary:
   - MODIFIED: app/(tabs)/index.tsx (SMS integration + GPS visit handling)
   - MODIFIED: utils/generateLedgerPdf.ts (robust PDF download with fallbacks)
   - MODIFIED: package.json (added expo-sms)
+
+---
+Task ID: 3
+Agent: Main
+Task: Add Notification Choice Popup (SMS/WhatsApp) + Daily Report Card
+
+Work Log:
+- Created utils/sendRecoveryWhatsapp.ts - WhatsApp deep link utility with phone formatting
+- Created components/ui/NotificationChoice.tsx - Mandatory popup after recovery with SMS + WhatsApp options (NO skip)
+- Created components/ui/DailyReportCard.tsx - Beautiful green gradient report card with ViewShot for screenshot sharing
+- Updated app/(tabs)/index.tsx:
+  - Added notification tracking (smsSentCount, whatsappSentCount)
+  - Replaced auto-SMS with mandatory notification choice popup
+  - Added "Report" button (yellow badge) in header
+  - Integrated DailyReportCard modal
+- Installed react-native-view-shot for screenshot capture
+- NotificationChoice exports NotificationMethod type for count tracking
+
+Stage Summary:
+- 2 new features implemented:
+  1. Notification Choice: After recovery, popup asks SMS or WhatsApp (mandatory, no skip)
+  2. Daily Report Card: Shows shops visited, recovery amount, SMS/WhatsApp counts - shareable screenshot
+- Key files:
+  - NEW: utils/sendRecoveryWhatsapp.ts
+  - NEW: components/ui/NotificationChoice.tsx
+  - NEW: components/ui/DailyReportCard.tsx
+  - MODIFIED: app/(tabs)/index.tsx (tracking + report integration)
+  - MODIFIED: package.json (react-native-view-shot)

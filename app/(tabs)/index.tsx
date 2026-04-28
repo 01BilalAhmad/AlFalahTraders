@@ -26,7 +26,8 @@ import { SuccessOverlay } from '@/components/ui/SuccessOverlay';
 import { OfflineBanner } from '@/components/ui/OfflineBanner';
 import { PerformanceChart } from '@/components/ui/PerformanceChart';
 import { RecoveryAnalysisChart } from '@/components/ui/RecoveryAnalysisChart';
-import { sendRecoverySms } from '@/utils/sendRecoverySms';
+import { NotificationChoice, NotificationMethod } from '@/components/ui/NotificationChoice';
+import { DailyReportCard } from '@/components/ui/DailyReportCard';
 
 type ChartView = 'trend' | 'analysis' | 'none';
 
@@ -56,10 +57,21 @@ export default function TodayRouteScreen() {
     amount: number;
     isOffline: boolean;
   }>({ visible: false, shopName: '', amount: 0, isOffline: false });
+  const [notifChoice, setNotifChoice] = useState<{
+    visible: boolean;
+    shopPhone: string;
+    shopName: string;
+    openingBalance: number;
+    recoveryAmount: number;
+    remainingBalance: number;
+  }>({ visible: false, shopPhone: '', shopName: '', openingBalance: 0, recoveryAmount: 0, remainingBalance: 0 });
   const [visitedShopIds, setVisitedShopIds] = useState<Set<string>>(new Set());
   const [todayRecovery, setTodayRecovery] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [chartView, setChartView] = useState<ChartView>('trend');
+  const [smsSentCount, setSmsSentCount] = useState(0);
+  const [whatsappSentCount, setWhatsappSentCount] = useState(0);
+  const [showReport, setShowReport] = useState(false);
 
   const todayDay = getTodayDayName();
   const isFriday = todayDay === 'friday';
@@ -134,17 +146,16 @@ export default function TodayRouteScreen() {
         setTodayRecovery((prev) => prev + payload.amount);
         setSuccessState({ visible: true, shopName, amount: payload.amount, isOffline: false });
 
-        // Send SMS after successful recovery (non-blocking, direct send)
+        // Show mandatory notification choice popup (SMS or WhatsApp)
         if (shopPhone) {
           const remainingBalance = openingBalance - payload.amount;
-          sendRecoverySms({
+          setNotifChoice({
+            visible: true,
             shopPhone,
             shopName,
             openingBalance,
             recoveryAmount: payload.amount,
             remainingBalance,
-          }).catch(() => {
-            // SMS failure should not affect the recovery flow
           });
         }
       } else {
@@ -247,6 +258,10 @@ export default function TodayRouteScreen() {
                     <MaterialIcons name="route" size={14} color="rgba(255,255,255,0.9)" />
                     <Text style={styles.heroDayText}>{capitalize(todayDay)}</Text>
                   </View>
+                  <Pressable style={styles.reportBadge} onPress={() => setShowReport(true)} hitSlop={8}>
+                    <MaterialIcons name="assessment" size={14} color="rgba(255,255,255,0.9)" />
+                    <Text style={styles.heroDayText}>Report</Text>
+                  </Pressable>
                 </View>
 
                 {/* Progress */}
@@ -449,6 +464,31 @@ export default function TodayRouteScreen() {
         isOffline={successState.isOffline}
         onDismiss={() => setSuccessState((s) => ({ ...s, visible: false }))}
       />
+      <NotificationChoice
+        visible={notifChoice.visible}
+        payload={notifChoice.visible ? {
+          shopPhone: notifChoice.shopPhone,
+          shopName: notifChoice.shopName,
+          openingBalance: notifChoice.openingBalance,
+          recoveryAmount: notifChoice.recoveryAmount,
+          remainingBalance: notifChoice.remainingBalance,
+        } : null}
+        onDone={(method: NotificationMethod) => {
+          setNotifChoice((s) => ({ ...s, visible: false }));
+          if (method === 'sms') setSmsSentCount((c) => c + 1);
+          else if (method === 'whatsapp') setWhatsappSentCount((c) => c + 1);
+        }}
+      />
+      <DailyReportCard
+        visible={showReport}
+        onClose={() => setShowReport(false)}
+        shopsVisited={visitedCount}
+        totalShops={todayShops.length}
+        totalRecovery={todayRecovery}
+        smsSent={smsSentCount}
+        whatsappSent={whatsappSentCount}
+        orderbookerName={user?.name || 'Orderbooker'}
+      />
     </View>
   );
 }
@@ -514,6 +554,17 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.25)',
+  },
+  reportBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(250,204,21,0.2)',
+    borderRadius: Radius.full,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(250,204,21,0.4)',
   },
   heroDayText: {
     fontSize: FontSize.xs,
