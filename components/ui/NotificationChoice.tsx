@@ -11,7 +11,7 @@ import {
   Animated,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { captureRef } from 'react-native-view-shot';
+import { captureRef } from '@/utils/captureRef';
 import * as Sharing from 'expo-sharing';
 import * as Linking from 'expo-linking';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
