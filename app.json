@@ -17,7 +17,11 @@
         "foregroundImage": "./assets/images/logo.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "permissions": [
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -55,9 +59,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "7584a84e-41f3-4f88-92d5-feabd990a6f7"
+        "projectId": "07b97a43-f033-49e8-9dab-51c34ad2fb6b"
       }
     },
-    "owner": "bilalahmadpk"
+    "owner": "alfalahtraders"
   }
 }
