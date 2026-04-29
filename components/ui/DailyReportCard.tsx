@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -8,11 +8,14 @@ import {
   Share,
   ScrollView,
   Dimensions,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
-import { getTodayLabel, getTodayDayName, capitalize } from '@/utils/format';
+import { captureRef } from 'react-native-view-shot';
+import { Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
+import { getTodayLabel } from '@/utils/format';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -45,31 +48,80 @@ export function DailyReportCard({
   pendingMessages,
   orderbookerName,
 }: DailyReportProps) {
+  const cardRef = useRef<View>(null);
+  const [isCapturing, setIsCapturing] = useState(false);
   const totalMessages = smsSent + whatsappSent;
-  const todayDay = getTodayDayName();
   const todayLabel = getTodayLabel();
   const visitPct = totalShops > 0 ? Math.round((shopsVisited / totalShops) * 100) : 0;
 
-  const handleShare = async () => {
-    try {
-      const message = [
-        `📋 *Al FALAH Credit System*`,
-        `📊 Daily Recovery Report`,
-        ``,
-        `📅 ${todayLabel}`,
-        `👤 ${orderbookerName}`,
-        ``,
-        `🏪 Shops: ${shopsVisited}/${totalShops} visited (${visitPct}%)`,
-        `💰 Recovery: ${formatAmount(totalRecovery)}`,
-        `📩 SMS: ${smsSent} | WhatsApp: ${whatsappSent}`,
-        pendingMessages > 0 ? `⚠️ ${pendingMessages} pending` : '',
-        ``,
-        `_Powered by Al FALAH Credit System_`,
-      ].filter(Boolean).join('\n');
+  const buildTextMessage = () => {
+    return [
+      `📋 *Al FALAH Credit System*`,
+      `📊 Daily Recovery Report`,
+      ``,
+      `📅 ${todayLabel}`,
+      `👤 ${orderbookerName}`,
+      ``,
+      `🏪 Shops: ${shopsVisited}/${totalShops} visited (${visitPct}%)`,
+      `💰 Recovery: ${formatAmount(totalRecovery)}`,
+      `📩 SMS: ${smsSent} | WhatsApp: ${whatsappSent}`,
+      pendingMessages > 0 ? `⚠️ ${pendingMessages} pending` : '',
+      ``,
+      `_Powered by Al FALAH Credit System_`,
+    ].filter(Boolean).join('\n');
+  };
 
-      await Share.share({ message });
-    } catch {
-      // User cancelled or error - silently ignore
+  const handleShareAsImage = async () => {
+    if (isCapturing) return;
+    setIsCapturing(true);
+
+    try {
+      // Step 1: Capture the card as an image
+      const imageUri = await captureRef(cardRef, {
+        format: 'png',
+        quality: 1.0,
+        result: 'tmpfile',
+        width: SCREEN_WIDTH * 2, // High resolution for clear text
+        height: undefined, // Auto height
+      });
+
+      if (!imageUri) {
+        throw new Error('Image capture returned empty URI');
+      }
+
+      // Step 2: Share the image file - WhatsApp will show it as a picture
+      const shareResult = await Share.share({
+        url: imageUri,
+        message: `Al FALAH Credit System - Daily Report (${todayLabel})`,
+      });
+
+      // If dismissed without sharing, do nothing
+      if (shareResult.action === Share.dismissedAction) {
+        return;
+      }
+    } catch (error: any) {
+      console.error('Image capture/share failed:', error);
+
+      // Fallback: Share as text message
+      Alert.alert(
+        'Image Share Failed',
+        'Sharing as text message instead.',
+        [
+          {
+            text: 'Share as Text',
+            onPress: async () => {
+              try {
+                await Share.share({ message: buildTextMessage() });
+              } catch {
+                // User cancelled
+              }
+            },
+          },
+          { text: 'Cancel', style: 'cancel' },
+        ]
+      );
+    } finally {
+      setIsCapturing(false);
     }
   };
 
@@ -94,133 +146,151 @@ export function DailyReportCard({
             </View>
           </Pressable>
 
-          {/* Report Card */}
-          <LinearGradient
-            colors={['#059669', '#047857', '#065F46']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 0.5, y: 1 }}
-            style={styles.card}
-          >
-            {/* Brand Header */}
-            <View style={styles.brandRow}>
-              <View style={styles.brandIcon}>
-                <MaterialIcons name="account-balance" size={22} color="#FFFFFF" />
-              </View>
-              <View style={styles.brandTextWrap}>
-                <Text style={styles.brandName}>Al FALAH Credit System</Text>
-                <Text style={styles.brandSub}>Daily Recovery Report</Text>
-              </View>
-            </View>
-
-            {/* Separator */}
-            <View style={styles.separator}>
-              <View style={styles.sepLine} />
-              <View style={styles.sepDiamond} />
-              <View style={styles.sepLine} />
-            </View>
-
-            {/* Date & Name */}
-            <View style={styles.infoSection}>
-              <View style={styles.infoRow}>
-                <MaterialIcons name="calendar-today" size={14} color="rgba(255,255,255,0.6)" />
-                <Text style={styles.infoText}>{todayLabel}</Text>
-              </View>
-              <View style={styles.infoRow}>
-                <MaterialIcons name="person-outline" size={14} color="rgba(255,255,255,0.6)" />
-                <Text style={styles.infoText}>{orderbookerName}</Text>
-              </View>
-            </View>
-
-            {/* Main Stat - Visit Progress */}
-            <View style={styles.mainStatCard}>
-              <View style={styles.mainStatLeft}>
-                <Text style={styles.mainStatValue}>{shopsVisited}/{totalShops}</Text>
-                <Text style={styles.mainStatLabel}>Shops Visited</Text>
-              </View>
-              <View style={styles.mainStatRight}>
-                <View style={styles.progressRingBg}>
-                  <View style={[styles.progressRingFill, { height: `${visitPct}%` }]} />
+          {/* Report Card - wrapped for view capture */}
+          <View ref={cardRef} collapsable={false} style={styles.cardCaptureWrap}>
+            <LinearGradient
+              colors={['#059669', '#047857', '#065F46']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 0.5, y: 1 }}
+              style={styles.card}
+            >
+              {/* Brand Header */}
+              <View style={styles.brandRow}>
+                <View style={styles.brandIcon}>
+                  <MaterialIcons name="account-balance" size={22} color="#FFFFFF" />
                 </View>
-                <Text style={styles.progressPct}>{visitPct}%</Text>
-              </View>
-            </View>
-
-            {/* Recovery Amount - Highlight */}
-            <View style={styles.recoveryHighlight}>
-              <MaterialIcons name="payments" size={18} color="#FDE68A" />
-              <Text style={styles.recoveryAmount}>{formatAmount(totalRecovery)}</Text>
-              <Text style={styles.recoveryLabel}>Total Recovery</Text>
-            </View>
-
-            {/* Stats Grid */}
-            <View style={styles.statsGrid}>
-              <View style={styles.statCard}>
-                <View style={[styles.statIcon, { backgroundColor: 'rgba(96,165,250,0.2)' }]}>
-                  <MaterialIcons name="sms" size={18} color="#60A5FA" />
+                <View style={styles.brandTextWrap}>
+                  <Text style={styles.brandName}>Al FALAH Credit System</Text>
+                  <Text style={styles.brandSub}>Daily Recovery Report</Text>
                 </View>
-                <Text style={styles.statValue}>{smsSent}</Text>
-                <Text style={styles.statLabel}>SMS</Text>
               </View>
 
-              <View style={styles.statCard}>
-                <View style={[styles.statIcon, { backgroundColor: 'rgba(74,222,128,0.2)' }]}>
-                  <MaterialIcons name="chat" size={18} color="#4ADE80" />
+              {/* Separator */}
+              <View style={styles.separator}>
+                <View style={styles.sepLine} />
+                <View style={styles.sepDiamond} />
+                <View style={styles.sepLine} />
+              </View>
+
+              {/* Date & Name */}
+              <View style={styles.infoSection}>
+                <View style={styles.infoRow}>
+                  <MaterialIcons name="calendar-today" size={14} color="rgba(255,255,255,0.6)" />
+                  <Text style={styles.infoText}>{todayLabel}</Text>
                 </View>
-                <Text style={styles.statValue}>{whatsappSent}</Text>
-                <Text style={styles.statLabel}>WhatsApp</Text>
-              </View>
-
-              <View style={styles.statCard}>
-                <View style={[styles.statIcon, { backgroundColor: 'rgba(250,204,21,0.2)' }]}>
-                  <MaterialIcons name="notifications-active" size={18} color="#FACC15" />
+                <View style={styles.infoRow}>
+                  <MaterialIcons name="person-outline" size={14} color="rgba(255,255,255,0.6)" />
+                  <Text style={styles.infoText}>{orderbookerName}</Text>
                 </View>
-                <Text style={styles.statValue}>{totalMessages}</Text>
-                <Text style={styles.statLabel}>Total Sent</Text>
               </View>
 
+              {/* Main Stat - Visit Progress */}
+              <View style={styles.mainStatCard}>
+                <View style={styles.mainStatLeft}>
+                  <Text style={styles.mainStatValue}>{shopsVisited}/{totalShops}</Text>
+                  <Text style={styles.mainStatLabel}>Shops Visited</Text>
+                </View>
+                <View style={styles.mainStatRight}>
+                  <View style={styles.progressRingBg}>
+                    <View style={[styles.progressRingFill, { height: `${visitPct}%` }]} />
+                  </View>
+                  <Text style={styles.progressPct}>{visitPct}%</Text>
+                </View>
+              </View>
+
+              {/* Recovery Amount - Highlight */}
+              <View style={styles.recoveryHighlight}>
+                <MaterialIcons name="payments" size={18} color="#FDE68A" />
+                <Text style={styles.recoveryAmount}>{formatAmount(totalRecovery)}</Text>
+                <Text style={styles.recoveryLabel}>Total Recovery</Text>
+              </View>
+
+              {/* Stats Grid */}
+              <View style={styles.statsGrid}>
+                <View style={styles.statCard}>
+                  <View style={[styles.statIcon, { backgroundColor: 'rgba(96,165,250,0.2)' }]}>
+                    <MaterialIcons name="sms" size={18} color="#60A5FA" />
+                  </View>
+                  <Text style={styles.statValue}>{smsSent}</Text>
+                  <Text style={styles.statLabel}>SMS</Text>
+                </View>
+
+                <View style={styles.statCard}>
+                  <View style={[styles.statIcon, { backgroundColor: 'rgba(74,222,128,0.2)' }]}>
+                    <MaterialIcons name="chat" size={18} color="#4ADE80" />
+                  </View>
+                  <Text style={styles.statValue}>{whatsappSent}</Text>
+                  <Text style={styles.statLabel}>WhatsApp</Text>
+                </View>
+
+                <View style={styles.statCard}>
+                  <View style={[styles.statIcon, { backgroundColor: 'rgba(250,204,21,0.2)' }]}>
+                    <MaterialIcons name="notifications-active" size={18} color="#FACC15" />
+                  </View>
+                  <Text style={styles.statValue}>{totalMessages}</Text>
+                  <Text style={styles.statLabel}>Total Sent</Text>
+                </View>
+
+                {pendingMessages > 0 ? (
+                  <View style={styles.statCard}>
+                    <View style={[styles.statIcon, { backgroundColor: 'rgba(239,68,68,0.2)' }]}>
+                      <MaterialIcons name="warning" size={18} color="#F87171" />
+                    </View>
+                    <Text style={[styles.statValue, { color: '#FCA5A5' }]}>{pendingMessages}</Text>
+                    <Text style={styles.statLabel}>Pending</Text>
+                  </View>
+                ) : (
+                  <View style={styles.statCard}>
+                    <View style={[styles.statIcon, { backgroundColor: 'rgba(167,243,208,0.2)' }]}>
+                      <MaterialIcons name="check-circle" size={18} color="#A7F3D0" />
+                    </View>
+                    <Text style={[styles.statValue, { color: '#A7F3D0' }]}>0</Text>
+                    <Text style={styles.statLabel}>Pending</Text>
+                  </View>
+                )}
+              </View>
+
+              {/* Pending Warning */}
               {pendingMessages > 0 ? (
-                <View style={styles.statCard}>
-                  <View style={[styles.statIcon, { backgroundColor: 'rgba(239,68,68,0.2)' }]}>
-                    <MaterialIcons name="warning" size={18} color="#F87171" />
-                  </View>
-                  <Text style={[styles.statValue, { color: '#FCA5A5' }]}>{pendingMessages}</Text>
-                  <Text style={styles.statLabel}>Pending</Text>
+                <View style={styles.pendingBanner}>
+                  <MaterialIcons name="error-outline" size={16} color="#FDE68A" />
+                  <Text style={styles.pendingBannerText}>
+                    {pendingMessages} message{pendingMessages > 1 ? 's' : ''} pending — send now!
+                  </Text>
                 </View>
-              ) : (
-                <View style={styles.statCard}>
-                  <View style={[styles.statIcon, { backgroundColor: 'rgba(167,243,208,0.2)' }]}>
-                    <MaterialIcons name="check-circle" size={18} color="#A7F3D0" />
-                  </View>
-                  <Text style={[styles.statValue, { color: '#A7F3D0' }]}>0</Text>
-                  <Text style={styles.statLabel}>Pending</Text>
-                </View>
-              )}
-            </View>
+              ) : null}
 
-            {/* Pending Warning */}
-            {pendingMessages > 0 ? (
-              <View style={styles.pendingBanner}>
-                <MaterialIcons name="error-outline" size={16} color="#FDE68A" />
-                <Text style={styles.pendingBannerText}>
-                  {pendingMessages} message{pendingMessages > 1 ? 's' : ''} pending — send now!
+              {/* Footer */}
+              <View style={styles.footer}>
+                <View style={styles.footerDot} />
+                <Text style={styles.footerText}>
+                  {todayLabel} · Al FALAH Credit System
                 </Text>
               </View>
-            ) : null}
-
-            {/* Footer */}
-            <View style={styles.footer}>
-              <View style={styles.footerDot} />
-              <Text style={styles.footerText}>
-                {todayLabel} · Al FALAH Credit System
-              </Text>
-            </View>
-          </LinearGradient>
+            </LinearGradient>
+          </View>
 
           {/* Share Button */}
-          <Pressable style={styles.shareBtn} onPress={handleShare}>
-            <LinearGradient colors={['#059669', '#047857']} style={styles.shareBtnGrad}>
-              <MaterialIcons name="share" size={20} color="#FFFFFF" />
-              <Text style={styles.shareBtnText}>Share Report</Text>
+          <Pressable
+            style={[styles.shareBtn, isCapturing && styles.shareBtnDisabled]}
+            onPress={handleShareAsImage}
+            disabled={isCapturing}
+          >
+            <LinearGradient
+              colors={isCapturing ? ['#6B7280', '#4B5563'] : ['#059669', '#047857']}
+              style={styles.shareBtnGrad}
+            >
+              {isCapturing ? (
+                <>
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                  <Text style={styles.shareBtnText}>Generating Image...</Text>
+                </>
+              ) : (
+                <>
+                  <MaterialIcons name="share" size={20} color="#FFFFFF" />
+                  <Text style={styles.shareBtnText}>Share as Picture</Text>
+                </>
+              )}
             </LinearGradient>
           </Pressable>
         </View>
@@ -263,6 +333,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.15)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  cardCaptureWrap: {
+    // Wrapper for react-native-view-shot captureRef
+    // collapsable={false} is set via prop on the component
   },
   card: {
     borderRadius: Radius.xl,
@@ -495,6 +569,9 @@ const styles = StyleSheet.create({
     borderRadius: Radius.md,
     overflow: 'hidden',
     ...Shadow.md,
+  },
+  shareBtnDisabled: {
+    opacity: 0.7,
   },
   shareBtnGrad: {
     flexDirection: 'row',
