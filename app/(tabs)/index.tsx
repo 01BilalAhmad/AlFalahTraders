@@ -458,7 +458,7 @@ export default function TodayRouteScreen() {
               </View>
             ) : null
           }
-          renderItem={useCallback(({ item }: { item: Shop }) => (
+          renderItem={({ item }: { item: Shop }) => (
             <ShopCard
               shop={item}
               isVisited={visitedShopIds.has(item.id)}
@@ -466,7 +466,7 @@ export default function TodayRouteScreen() {
               onPress={() => setDetailShop(item)}
               onGpsVisit={() => setGpsVisitShop(item)}
             />
-          ), [visitedShopIds])}
+          )}
           contentContainerStyle={styles.listContent}
         />
       )}
