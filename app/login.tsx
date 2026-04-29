@@ -1,4 +1,3 @@
-// Powered by OnSpace.AI
 import React, { useState } from 'react';
 import {
   View,
@@ -39,7 +38,6 @@ export default function LoginScreen() {
     setIsLoading(true);
     try {
       const res = await login(username.trim(), password.trim());
-      // After login: download all shops locally for offline use
       setSyncingData(true);
       try {
         const { StorageService } = await import('@/services/storage');
@@ -48,7 +46,7 @@ export default function LoginScreen() {
           await triggerFullSync(savedUser.id);
         }
       } catch {
-        // Non-critical — app works from API if sync fails
+        // Non-critical
       } finally {
         setSyncingData(false);
       }
@@ -73,7 +71,7 @@ export default function LoginScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* Logo area */}
+        {/* Logo */}
         <View style={styles.logoArea}>
           <View style={styles.logoCircle}>
             <Image
@@ -82,16 +80,16 @@ export default function LoginScreen() {
               contentFit="contain"
             />
           </View>
-          <Text style={styles.appTitle}>Al FALAH Credit System</Text>
-          <Text style={styles.appSubtitle}>Order Bookers Portal</Text>
+          <Text style={styles.appTitle}>Al FALAH</Text>
+          <Text style={styles.appSubtitle}>Credit System</Text>
+          <Text style={styles.appTagline}>Order Bookers Portal</Text>
         </View>
 
-        {/* Card */}
+        {/* Login Card */}
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Sign In</Text>
-          <Text style={styles.cardSubtitle}>Enter your credentials to continue</Text>
+          <Text style={styles.cardTitle}>Welcome Back</Text>
+          <Text style={styles.cardSubtitle}>Sign in to continue</Text>
 
-          {/* Username */}
           <Text style={styles.label}>Username</Text>
           <View style={styles.inputRow}>
             <MaterialIcons name="person" size={20} color={Colors.textSecondary} style={styles.inputIcon} />
@@ -107,7 +105,6 @@ export default function LoginScreen() {
             />
           </View>
 
-          {/* Password */}
           <Text style={styles.label}>Password</Text>
           <View style={styles.inputRow}>
             <MaterialIcons name="lock" size={20} color={Colors.textSecondary} style={styles.inputIcon} />
@@ -130,7 +127,6 @@ export default function LoginScreen() {
             </Pressable>
           </View>
 
-          {/* Login button */}
           <Pressable
             style={({ pressed }) => [
               styles.loginBtn,
@@ -143,18 +139,17 @@ export default function LoginScreen() {
             {isLoading || syncingData ? (
               <>
                 <ActivityIndicator size="small" color={Colors.textInverse} />
-                {syncingData ? <Text style={styles.loginBtnText}>Downloading data...</Text> : null}
+                {syncingData ? <Text style={styles.loginBtnText}>Syncing data...</Text> : null}
               </>
             ) : (
               <>
                 <MaterialIcons name="login" size={20} color={Colors.textInverse} />
-                <Text style={styles.loginBtnText}>Login</Text>
+                <Text style={styles.loginBtnText}>Sign In</Text>
               </>
             )}
           </Pressable>
         </View>
 
-        {/* Footer */}
         <Text style={styles.footer}>
           Al FALAH Credit System © 2025
         </Text>
@@ -192,15 +187,23 @@ const styles = StyleSheet.create({
     borderRadius: 40,
   },
   appTitle: {
-    fontSize: FontSize.xxl,
+    fontSize: FontSize.xxxl,
     fontWeight: FontWeight.bold,
-    color: Colors.text,
-    marginBottom: 4,
+    color: Colors.primaryDark,
+    letterSpacing: 1,
   },
   appSubtitle: {
-    fontSize: FontSize.base,
+    fontSize: FontSize.lg,
+    color: Colors.primary,
+    fontWeight: FontWeight.bold,
+    marginTop: -2,
+    letterSpacing: 0.5,
+  },
+  appTagline: {
+    fontSize: FontSize.sm,
     color: Colors.textSecondary,
     fontWeight: FontWeight.medium,
+    marginTop: Spacing.xs,
   },
   card: {
     backgroundColor: Colors.surface,
@@ -208,12 +211,14 @@ const styles = StyleSheet.create({
     padding: Spacing.lg,
     ...Shadow.md,
     marginBottom: Spacing.lg,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
   },
   cardTitle: {
     fontSize: FontSize.xl,
     fontWeight: FontWeight.bold,
     color: Colors.text,
-    marginBottom: 4,
+    marginBottom: 2,
   },
   cardSubtitle: {
     fontSize: FontSize.sm,
@@ -221,7 +226,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.lg,
   },
   label: {
-    fontSize: FontSize.sm,
+    fontSize: FontSize.xs,
     fontWeight: FontWeight.semibold,
     color: Colors.textSecondary,
     marginBottom: Spacing.xs,
@@ -254,13 +259,13 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
     backgroundColor: Colors.primary,
     borderRadius: Radius.md,
-    paddingVertical: 16,
+    paddingVertical: 15,
     marginTop: Spacing.sm,
   },
   loginBtnDisabled: { backgroundColor: Colors.textMuted },
   loginBtnPressed: { opacity: 0.85 },
   loginBtnText: {
-    fontSize: FontSize.md,
+    fontSize: FontSize.base,
     fontWeight: FontWeight.bold,
     color: Colors.textInverse,
   },

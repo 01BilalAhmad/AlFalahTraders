@@ -1,4 +1,4 @@
-// Powered by OnSpace.AI
+// Al FALAH Credit System
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   View,
@@ -17,7 +17,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useShops } from '@/hooks/useShops';
 import { ApiService, Shop } from '@/services/api';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
-import { getTodayDayName, getTodayLabel, getTodayDateStr, capitalize } from '@/utils/format';
+import { getTodayDayName, getTodayLabel, getTodayDateStr, capitalize, formatPKR } from '@/utils/format';
 import { ShopCard } from '@/components/ui/ShopCard';
 import { RecoveryBottomSheet } from '@/components/ui/RecoveryBottomSheet';
 import { GpsVisitBottomSheet } from '@/components/ui/GpsVisitBottomSheet';
@@ -70,7 +70,7 @@ export default function TodayRouteScreen() {
   const [visitedShopIds, setVisitedShopIds] = useState<Set<string>>(new Set());
   const [todayRecovery, setTodayRecovery] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
-  const [chartView, setChartView] = useState<ChartView>('trend');
+  const [chartView, setChartView] = useState<ChartView>('none');
   const [smsSentCount, setSmsSentCount] = useState(0);
   const [whatsappSentCount, setWhatsappSentCount] = useState(0);
   const [showReport, setShowReport] = useState(false);
@@ -159,7 +159,6 @@ export default function TodayRouteScreen() {
         setTodayRecovery((prev) => prev + payload.amount);
         setSuccessState({ visible: true, shopName, amount: payload.amount, isOffline: false });
 
-        // Save pending notification (will be removed when user sends)
         if (shopPhone) {
           const remainingBalance = openingBalance - payload.amount;
           const pendingNotif: PendingNotification = {
@@ -199,7 +198,6 @@ export default function TodayRouteScreen() {
           createdBy: user.id,
           createdAt: new Date().toISOString(),
         });
-        // Mark GPS visit even when offline
         if (payload.markGpsVisit) {
           setVisitedShopIds((prev) => new Set([...prev, shopId]));
         }
@@ -266,31 +264,35 @@ export default function TodayRouteScreen() {
           }
           ListHeaderComponent={
             <View>
-              {/* Hero header */}
+              {/* Hero Card */}
               <LinearGradient
                 colors={['#059669', '#065F46']}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={styles.heroCard}
               >
-                {/* Decorative circles */}
                 <View style={styles.heroBubble1} />
                 <View style={styles.heroBubble2} />
 
+                {/* Top Row: Greeting + Badges */}
                 <View style={styles.heroTop}>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.heroGreeting}>
-                      {user ? `Hello, ${user.name.split(' ')[0]} 👋` : "Today's Route"}
+                    <Text style={styles.heroGreeting} numberOfLines={1}>
+                      Hello, {user ? user.name.split(' ')[0] : 'Order Booker'} 👋
                     </Text>
                     <Text style={styles.heroDate}>{getTodayLabel()}</Text>
                   </View>
+                </View>
+
+                {/* Quick Action Badges */}
+                <View style={styles.badgesRow}>
                   <View style={styles.heroDayBadge}>
-                    <MaterialIcons name="route" size={14} color="rgba(255,255,255,0.9)" />
-                    <Text style={styles.heroDayText}>{capitalize(todayDay)}</Text>
+                    <MaterialIcons name="route" size={13} color="rgba(255,255,255,0.9)" />
+                    <Text style={styles.badgeText}>{capitalize(todayDay)}</Text>
                   </View>
                   <Pressable style={styles.reportBadge} onPress={() => setShowReport(true)} hitSlop={8}>
-                    <MaterialIcons name="assessment" size={14} color="rgba(255,255,255,0.9)" />
-                    <Text style={styles.heroDayText}>Report</Text>
+                    <MaterialIcons name="assessment" size={13} color="rgba(255,255,255,0.9)" />
+                    <Text style={styles.badgeText}>Report</Text>
                   </Pressable>
                   <Pressable
                     style={[
@@ -300,8 +302,8 @@ export default function TodayRouteScreen() {
                     onPress={() => setShowPending(true)}
                     hitSlop={8}
                   >
-                    <MaterialIcons name="pending-actions" size={14} color="rgba(255,255,255,0.9)" />
-                    <Text style={styles.heroDayText}>Pending</Text>
+                    <MaterialIcons name="pending-actions" size={13} color="rgba(255,255,255,0.9)" />
+                    <Text style={styles.badgeText}>Pending</Text>
                     {pendingNotifications.length > 0 ? (
                       <View style={styles.pendingCountDot}>
                         <Text style={styles.pendingCountText}>{pendingNotifications.length}</Text>
@@ -310,110 +312,101 @@ export default function TodayRouteScreen() {
                   </Pressable>
                 </View>
 
-                {/* Progress */}
-                <View style={styles.heroProgress}>
-                  <View style={styles.heroProgressRow}>
-                    <Text style={styles.heroProgressLabel}>
+                {/* Progress Bar */}
+                <View style={styles.progressSection}>
+                  <View style={styles.progressHeader}>
+                    <Text style={styles.progressLabel}>
                       {visitedCount} of {todayShops.length} shops visited
                     </Text>
-                    <Text style={styles.heroProgressPct}>{progressPct.toFixed(0)}%</Text>
+                    <Text style={styles.progressPct}>{Math.round(progressPct)}%</Text>
                   </View>
-                  <View style={styles.heroProgressTrack}>
+                  <View style={styles.progressTrack}>
                     <View
-                      style={[styles.heroProgressFill, { width: `${Math.min(progressPct, 100)}%` }]}
+                      style={[styles.progressFill, { width: `${Math.min(progressPct, 100)}%` }]}
                     />
-                    {/* Glow dot at progress tip */}
-                    {progressPct > 5 && progressPct < 100 ? (
-                      <View style={[styles.heroPrgDot, { left: `${Math.min(progressPct, 100)}%` }]} />
-                    ) : null}
                   </View>
                 </View>
 
-                {/* Stat pills */}
-                <View style={styles.heroPills}>
-                  <View style={styles.heroPill}>
-                    <Text style={styles.heroPillValue}>{todayShops.length}</Text>
-                    <Text style={styles.heroPillLabel}>Shops</Text>
+                {/* Stat Pills */}
+                <View style={styles.pillsRow}>
+                  <View style={styles.pill}>
+                    <Text style={styles.pillValue}>{todayShops.length}</Text>
+                    <Text style={styles.pillLabel}>Shops</Text>
                   </View>
-                  <View style={styles.heroPillDivider} />
-                  <View style={styles.heroPill}>
-                    <Text style={styles.heroPillValue}>
+                  <View style={styles.pillDivider} />
+                  <View style={styles.pill}>
+                    <Text style={styles.pillValue}>
                       {totalOutstanding >= 1000000
                         ? `${(totalOutstanding / 1000000).toFixed(1)}M`
                         : totalOutstanding >= 1000
                         ? `${(totalOutstanding / 1000).toFixed(0)}K`
                         : String(totalOutstanding)}
                     </Text>
-                    <Text style={styles.heroPillLabel}>Outstanding</Text>
+                    <Text style={styles.pillLabel}>Outstanding</Text>
                   </View>
-                  <View style={styles.heroPillDivider} />
-                  <View style={styles.heroPill}>
-                    <Text style={[styles.heroPillValue, styles.heroPillGreen]}>
-                      {todayRecovery >= 1000000
-                        ? `${(todayRecovery / 1000000).toFixed(1)}M`
-                        : todayRecovery >= 1000
-                        ? `${(todayRecovery / 1000).toFixed(0)}K`
-                        : String(todayRecovery)}
+                  <View style={styles.pillDivider} />
+                  <View style={styles.pill}>
+                    <Text style={[styles.pillValue, styles.pillGreen]}>
+                      {formatPKR(todayRecovery)}
                     </Text>
-                    <Text style={styles.heroPillLabel}>Recovered</Text>
+                    <Text style={styles.pillLabel}>Recovered</Text>
                   </View>
                 </View>
               </LinearGradient>
 
-              {/* Chart section */}
-              {user ? (
-                <View style={styles.chartSection}>
-                  {/* Chart tab switcher */}
-                  <View style={styles.chartTabRow}>
-                    {(
-                      [
-                        { key: 'trend', icon: 'show-chart', label: 'Trend' },
-                        { key: 'analysis', icon: 'analytics', label: 'Analysis' },
-                        { key: 'none', icon: 'visibility-off', label: 'Hide' },
-                      ] as { key: ChartView; icon: string; label: string }[]
-                    ).map((opt) => (
-                      <Pressable
-                        key={opt.key}
-                        style={[
-                          styles.chartTabBtn,
-                          chartView === opt.key && styles.chartTabBtnActive,
-                        ]}
-                        onPress={() => setChartView(opt.key)}
-                        hitSlop={4}
-                      >
-                        <MaterialIcons
-                          name={opt.icon as any}
-                          size={14}
-                          color={chartView === opt.key ? Colors.primaryDark : Colors.textMuted}
-                        />
-                        <Text
-                          style={[
-                            styles.chartTabLabel,
-                            chartView === opt.key && styles.chartTabLabelActive,
-                          ]}
-                        >
-                          {opt.label}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </View>
+              {/* Chart Toggle (collapsed by default for speed) */}
+              <View style={styles.chartToggleRow}>
+                {(
+                  [
+                    { key: 'trend' as ChartView, icon: 'show-chart', label: 'Trend' },
+                    { key: 'analysis' as ChartView, icon: 'analytics', label: 'Analysis' },
+                    { key: 'none' as ChartView, icon: 'visibility-off', label: 'Hide' },
+                  ]
+                ).map((opt) => (
+                  <Pressable
+                    key={opt.key}
+                    style={[
+                      styles.chartTabBtn,
+                      chartView === opt.key && styles.chartTabBtnActive,
+                    ]}
+                    onPress={() => setChartView(opt.key)}
+                    hitSlop={4}
+                  >
+                    <MaterialIcons
+                      name={opt.icon as any}
+                      size={13}
+                      color={chartView === opt.key ? Colors.primaryDark : Colors.textMuted}
+                    />
+                    <Text
+                      style={[
+                        styles.chartTabLabel,
+                        chartView === opt.key && styles.chartTabLabelActive,
+                      ]}
+                    >
+                      {opt.label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
 
-                  {chartView === 'trend' ? (
-                    <PerformanceChart userId={user.id} />
-                  ) : chartView === 'analysis' ? (
-                    <RecoveryAnalysisChart userId={user.id} />
-                  ) : null}
+              {chartView === 'trend' && user ? (
+                <View style={styles.chartWrap}>
+                  <PerformanceChart userId={user.id} />
+                </View>
+              ) : chartView === 'analysis' && user ? (
+                <View style={styles.chartWrap}>
+                  <RecoveryAnalysisChart userId={user.id} />
                 </View>
               ) : null}
 
-              {/* Search bar */}
+              {/* Search Bar */}
               <View style={styles.searchRow}>
                 <MaterialIcons name="search" size={18} color={Colors.textSecondary} />
                 <TextInput
                   style={styles.searchInput}
                   value={searchQuery}
                   onChangeText={setSearchQuery}
-                  placeholder="Search shops, areas, owners..."
+                  placeholder="Search shops, areas..."
                   placeholderTextColor={Colors.textMuted}
                 />
                 {searchQuery ? (
@@ -427,13 +420,13 @@ export default function TodayRouteScreen() {
                 ) : null}
               </View>
 
-              {/* Shop count row */}
+              {/* Shop count */}
               <View style={styles.shopCountRow}>
                 <View style={styles.shopCountLeft}>
                   <View style={styles.shopCountDot} />
                   <Text style={styles.shopCountText}>
                     {filteredShops.length} {filteredShops.length === 1 ? 'shop' : 'shops'}
-                    {searchQuery ? ` matching "${searchQuery}"` : ' on route'}
+                    {searchQuery ? ` found` : ' on route'}
                   </Text>
                 </View>
                 {visitedCount > 0 ? (
@@ -523,7 +516,6 @@ export default function TodayRouteScreen() {
           setNotifChoice((s) => ({ ...s, visible: false }));
           if (method === 'sms') setSmsSentCount((c) => c + 1);
           else if (method === 'whatsapp') setWhatsappSentCount((c) => c + 1);
-          // Remove from pending list
           StorageService.getPendingNotifications(getTodayDateStr()).then((list) => {
             const entry = list.find((n) => n.shopName === notifChoice.shopName);
             if (entry) {
@@ -572,22 +564,22 @@ const styles = StyleSheet.create({
   listContent: {
     paddingBottom: Spacing.xxl + 16,
   },
-  // Hero
+  // Hero Card
   heroCard: {
     margin: Spacing.md,
     marginBottom: Spacing.sm,
     borderRadius: Radius.xl,
-    padding: Spacing.md,
+    padding: Spacing.lg,
     overflow: 'hidden',
     ...Shadow.lg,
   },
   heroBubble1: {
     position: 'absolute',
-    width: 180,
-    height: 180,
-    borderRadius: 90,
+    width: 160,
+    height: 160,
+    borderRadius: 80,
     backgroundColor: 'rgba(255,255,255,0.05)',
-    top: -60,
+    top: -50,
     right: -40,
   },
   heroBubble2: {
@@ -600,28 +592,32 @@ const styles = StyleSheet.create({
     left: -20,
   },
   heroTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: Spacing.md,
+    marginBottom: Spacing.sm,
   },
   heroGreeting: {
-    fontSize: FontSize.xl,
+    fontSize: FontSize.lg,
     fontWeight: FontWeight.bold,
     color: '#FFFFFF',
   },
   heroDate: {
     fontSize: FontSize.sm,
-    color: 'rgba(255,255,255,0.72)',
+    color: 'rgba(255,255,255,0.65)',
     marginTop: 2,
+  },
+  // Badges
+  badgesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    marginBottom: Spacing.md,
   },
   heroDayBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    backgroundColor: 'rgba(255,255,255,0.18)',
+    backgroundColor: 'rgba(255,255,255,0.15)',
     borderRadius: Radius.full,
-    paddingHorizontal: Spacing.sm,
+    paddingHorizontal: 12,
     paddingVertical: 6,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.25)',
@@ -630,27 +626,27 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    backgroundColor: 'rgba(250,204,21,0.2)',
+    backgroundColor: 'rgba(250,204,21,0.15)',
     borderRadius: Radius.full,
-    paddingHorizontal: Spacing.sm,
+    paddingHorizontal: 12,
     paddingVertical: 6,
     borderWidth: 1,
-    borderColor: 'rgba(250,204,21,0.4)',
+    borderColor: 'rgba(250,204,21,0.35)',
   },
   pendingBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(255,255,255,0.1)',
     borderRadius: Radius.full,
-    paddingHorizontal: Spacing.sm,
+    paddingHorizontal: 12,
     paddingVertical: 6,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
+    borderColor: 'rgba(255,255,255,0.18)',
   },
   pendingBadgeActive: {
-    backgroundColor: 'rgba(239,68,68,0.25)',
-    borderColor: 'rgba(239,68,68,0.5)',
+    backgroundColor: 'rgba(239,68,68,0.2)',
+    borderColor: 'rgba(239,68,68,0.45)',
   },
   pendingCountDot: {
     width: 18,
@@ -666,95 +662,83 @@ const styles = StyleSheet.create({
     fontWeight: FontWeight.bold,
     color: '#FFFFFF',
   },
-  heroDayText: {
+  badgeText: {
     fontSize: FontSize.xs,
-    fontWeight: FontWeight.bold,
+    fontWeight: FontWeight.semibold,
     color: '#FFFFFF',
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
   },
-  heroProgress: {
+  // Progress
+  progressSection: {
     marginBottom: Spacing.md,
   },
-  heroProgressRow: {
+  progressHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginBottom: 6,
   },
-  heroProgressLabel: {
+  progressLabel: {
     fontSize: FontSize.xs,
-    color: 'rgba(255,255,255,0.8)',
+    color: 'rgba(255,255,255,0.75)',
     fontWeight: FontWeight.medium,
   },
-  heroProgressPct: {
+  progressPct: {
     fontSize: FontSize.xs,
     color: '#FFFFFF',
     fontWeight: FontWeight.bold,
   },
-  heroProgressTrack: {
+  progressTrack: {
     height: 8,
-    backgroundColor: 'rgba(255,255,255,0.22)',
+    backgroundColor: 'rgba(255,255,255,0.18)',
     borderRadius: Radius.full,
-    overflow: 'visible',
+    overflow: 'hidden',
   },
-  heroProgressFill: {
+  progressFill: {
     height: 8,
     backgroundColor: '#FFFFFF',
     borderRadius: Radius.full,
   },
-  heroPrgDot: {
-    position: 'absolute',
-    top: -3,
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: '#FFFFFF',
-    marginLeft: -7,
-    shadowColor: '#fff',
-    shadowOpacity: 0.8,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  heroPills: {
+  // Pills
+  pillsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.18)',
+    backgroundColor: 'rgba(0,0,0,0.15)',
     borderRadius: Radius.md,
     padding: Spacing.sm,
   },
-  heroPill: {
+  pill: {
     flex: 1,
     alignItems: 'center',
     gap: 2,
   },
-  heroPillDivider: {
+  pillDivider: {
     width: 1,
-    height: 32,
-    backgroundColor: 'rgba(255,255,255,0.18)',
+    height: 30,
+    backgroundColor: 'rgba(255,255,255,0.15)',
   },
-  heroPillValue: {
-    fontSize: FontSize.lg,
+  pillValue: {
+    fontSize: FontSize.md,
     fontWeight: FontWeight.bold,
     color: '#FFFFFF',
   },
-  heroPillGreen: { color: '#A7F3D0' },
-  heroPillLabel: {
-    fontSize: 10,
-    color: 'rgba(255,255,255,0.65)',
+  pillGreen: { color: '#A7F3D0' },
+  pillLabel: {
+    fontSize: 9,
+    color: 'rgba(255,255,255,0.55)',
     textTransform: 'uppercase',
     letterSpacing: 0.4,
+    fontWeight: FontWeight.medium,
   },
-  // Chart section
-  chartSection: {
-    marginHorizontal: Spacing.md,
-    marginBottom: Spacing.xs,
-  },
-  chartTabRow: {
+  // Chart Toggle
+  chartToggleRow: {
     flexDirection: 'row',
     gap: Spacing.xs,
-    marginBottom: Spacing.sm,
+    marginHorizontal: Spacing.md,
+    marginTop: Spacing.sm,
+    marginBottom: Spacing.xs,
     backgroundColor: Colors.surface,
     borderRadius: Radius.full,
-    padding: 4,
+    padding: 3,
     ...Shadow.sm,
   },
   chartTabBtn: {
@@ -762,8 +746,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 5,
-    paddingVertical: 8,
+    gap: 4,
+    paddingVertical: 7,
     borderRadius: Radius.full,
   },
   chartTabBtnActive: {
@@ -778,6 +762,10 @@ const styles = StyleSheet.create({
     color: Colors.primaryDark,
     fontWeight: FontWeight.bold,
   },
+  chartWrap: {
+    marginHorizontal: Spacing.md,
+    marginBottom: Spacing.sm,
+  },
   // Search
   searchRow: {
     flexDirection: 'row',
@@ -788,7 +776,7 @@ const styles = StyleSheet.create({
     marginTop: Spacing.sm,
     borderRadius: Radius.full,
     paddingHorizontal: Spacing.md,
-    paddingVertical: 12,
+    paddingVertical: 11,
     ...Shadow.sm,
     borderWidth: 1,
     borderColor: Colors.borderLight,
@@ -801,6 +789,7 @@ const styles = StyleSheet.create({
   searchClear: {
     padding: 2,
   },
+  // Shop Count
   shopCountRow: {
     flexDirection: 'row',
     alignItems: 'center',
