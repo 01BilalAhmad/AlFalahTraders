@@ -8,10 +8,14 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { captureRef } from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
+import * as Linking from 'expo-linking';
 import { Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
 import { getTodayLabel } from '@/utils/format';
 
@@ -73,50 +77,46 @@ export function DailyReportCard({
     setIsCapturing(true);
 
     try {
-      // Step 1: Capture the card as a PNG image
+      // Small delay to ensure layout is rendered
+      await new Promise(r => setTimeout(r, 300));
+
+      // Capture the card as a PNG image
       const imageUri = await captureRef(cardRef, {
         format: 'png',
         quality: 1.0,
         result: 'tmpfile',
-        snapshotContentContainer: true,
       });
 
       if (!imageUri) {
         throw new Error('Image capture returned empty URI');
       }
 
-      console.log('Image captured at:', imageUri);
+      console.log('[DailyReport] Image captured at:', imageUri);
 
-      // Step 2: Check if sharing is available
+      // Use expo-sharing to open share sheet (WhatsApp, etc.)
       const isAvailable = await Sharing.isAvailableAsync();
       if (!isAvailable) {
         throw new Error('Sharing not available on this device');
       }
 
-      // Step 3: Open native share sheet with the image file
-      // expo-sharing properly shares files on Android (unlike Share.share)
       await Sharing.shareAsync(imageUri, {
         mimeType: 'image/png',
-        dialogTitle: 'Share Report to WhatsApp',
+        dialogTitle: 'Share Daily Report',
         UTI: 'public.png',
       });
     } catch (error: any) {
-      console.error('Image capture/share failed:', error);
+      console.error('[DailyReport] Image capture/share failed:', error);
 
-      // Fallback: Share as text message
+      // Fallback: Share as text via WhatsApp directly
       Alert.alert(
         'Image Share Failed',
-        'Kya aap text message mein share karna chahte hain?',
+        'Picture share nahi hua. Kya WhatsApp pe text bhejna hai?',
         [
           {
-            text: 'Haan, Text Share Karo',
-            onPress: async () => {
-              try {
-                const { default: RNShare } = await import('react-native');
-                await RNShare.Share.share({ message: buildTextMessage() });
-              } catch {
-                // User cancelled
-              }
+            text: 'WhatsApp Text Bhejo',
+            onPress: () => {
+              const msg = encodeURIComponent(buildTextMessage());
+              Linking.openURL(`https://wa.me/?text=${msg}`);
             },
           },
           { text: 'Cancel', style: 'cancel' },
@@ -135,164 +135,172 @@ export function DailyReportCard({
         <View style={styles.backdropFade} />
       </Pressable>
 
-      <ScrollView
-        contentContainerStyle={styles.scrollCenter}
-        bounces={false}
-        showsVerticalScrollIndicator={false}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'android' ? undefined : 'padding'}
+        style={styles.keyboardWrap}
       >
-        <View style={styles.container}>
-          {/* Close button */}
-          <Pressable style={styles.closeTop} onPress={onClose} hitSlop={12}>
-            <View style={styles.closeTopBtn}>
-              <MaterialIcons name="close" size={18} color="rgba(255,255,255,0.9)" />
-            </View>
-          </Pressable>
-
-          {/* ============================================= */}
-          {/* REPORT CARD — uses solid bg (NOT LinearGradient) */}
-          {/* so captureRef can properly capture it as image */}
-          {/* ============================================= */}
-          <View ref={cardRef} collapsable={false} style={styles.card}>
-            {/* Gradient overlay effect using semi-transparent views */}
-            <View style={styles.gradientOverlayTop} />
-
-            {/* Brand Header */}
-            <View style={styles.brandRow}>
-              <View style={styles.brandIcon}>
-                <MaterialIcons name="account-balance" size={22} color="#FFFFFF" />
+        <ScrollView
+          contentContainerStyle={styles.scrollCenter}
+          bounces={false}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={styles.container}>
+            {/* Close button */}
+            <Pressable style={styles.closeTop} onPress={onClose} hitSlop={12}>
+              <View style={styles.closeTopBtn}>
+                <MaterialIcons name="close" size={20} color="rgba(255,255,255,0.9)" />
               </View>
-              <View style={styles.brandTextWrap}>
-                <Text style={styles.brandName}>Al FALAH Credit System</Text>
-                <Text style={styles.brandSub}>Daily Recovery Report</Text>
-              </View>
-            </View>
+            </Pressable>
 
-            {/* Separator */}
-            <View style={styles.separator}>
-              <View style={styles.sepLine} />
-              <View style={styles.sepDiamond} />
-              <View style={styles.sepLine} />
-            </View>
+            {/* ============================================= */}
+            {/* REPORT CARD — solid bg so captureRef works   */}
+            {/* ============================================= */}
+            <View ref={cardRef} collapsable={false} style={styles.card}>
+              {/* Gradient overlay — pure View, not LinearGradient */}
+              <View style={styles.gradientOverlayTop} />
+              <View style={styles.gradientOverlayBottom} />
 
-            {/* Date & Name */}
-            <View style={styles.infoSection}>
-              <View style={styles.infoRow}>
-                <MaterialIcons name="calendar-today" size={14} color="rgba(255,255,255,0.6)" />
-                <Text style={styles.infoText}>{todayLabel}</Text>
-              </View>
-              <View style={styles.infoRow}>
-                <MaterialIcons name="person-outline" size={14} color="rgba(255,255,255,0.6)" />
-                <Text style={styles.infoText}>{orderbookerName}</Text>
-              </View>
-            </View>
-
-            {/* Main Stat - Visit Progress */}
-            <View style={styles.mainStatCard}>
-              <View style={styles.mainStatLeft}>
-                <Text style={styles.mainStatValue}>{shopsVisited}/{totalShops}</Text>
-                <Text style={styles.mainStatLabel}>Shops Visited</Text>
-              </View>
-              <View style={styles.mainStatRight}>
-                <View style={styles.progressRingBg}>
-                  <View style={[styles.progressRingFill, { height: `${visitPct}%` }]} />
+              {/* Brand Header */}
+              <View style={styles.brandRow}>
+                <View style={styles.brandIcon}>
+                  <MaterialIcons name="account-balance" size={28} color="#FFFFFF" />
                 </View>
-                <Text style={styles.progressPct}>{visitPct}%</Text>
-              </View>
-            </View>
-
-            {/* Recovery Amount - Highlight */}
-            <View style={styles.recoveryHighlight}>
-              <MaterialIcons name="payments" size={18} color="#FDE68A" />
-              <Text style={styles.recoveryAmount}>{formatAmount(totalRecovery)}</Text>
-              <Text style={styles.recoveryLabel}>Total Recovery</Text>
-            </View>
-
-            {/* Stats Grid */}
-            <View style={styles.statsGrid}>
-              <View style={styles.statCard}>
-                <View style={[styles.statIcon, { backgroundColor: 'rgba(96,165,250,0.2)' }]}>
-                  <MaterialIcons name="sms" size={18} color="#60A5FA" />
+                <View style={styles.brandTextWrap}>
+                  <Text style={styles.brandName}>Al FALAH Credit System</Text>
+                  <Text style={styles.brandSub}>Daily Recovery Report</Text>
                 </View>
-                <Text style={styles.statValue}>{smsSent}</Text>
-                <Text style={styles.statLabel}>SMS</Text>
               </View>
 
-              <View style={styles.statCard}>
-                <View style={[styles.statIcon, { backgroundColor: 'rgba(74,222,128,0.2)' }]}>
-                  <MaterialIcons name="chat" size={18} color="#4ADE80" />
+              {/* Separator */}
+              <View style={styles.separator}>
+                <View style={styles.sepLine} />
+                <View style={styles.sepDiamond} />
+                <View style={styles.sepLine} />
+              </View>
+
+              {/* Date & Name */}
+              <View style={styles.infoSection}>
+                <View style={styles.infoRow}>
+                  <MaterialIcons name="calendar-today" size={18} color="rgba(255,255,255,0.7)" />
+                  <Text style={styles.infoText}>{todayLabel}</Text>
                 </View>
-                <Text style={styles.statValue}>{whatsappSent}</Text>
-                <Text style={styles.statLabel}>WhatsApp</Text>
-              </View>
-
-              <View style={styles.statCard}>
-                <View style={[styles.statIcon, { backgroundColor: 'rgba(250,204,21,0.2)' }]}>
-                  <MaterialIcons name="notifications-active" size={18} color="#FACC15" />
+                <View style={styles.infoRow}>
+                  <MaterialIcons name="person-outline" size={18} color="rgba(255,255,255,0.7)" />
+                  <Text style={styles.infoText}>{orderbookerName}</Text>
                 </View>
-                <Text style={styles.statValue}>{totalMessages}</Text>
-                <Text style={styles.statLabel}>Total Sent</Text>
               </View>
 
+              {/* Big Divider */}
+              <View style={styles.bigDivider} />
+
+              {/* Main Stat - Visit Progress — BIGGER */}
+              <View style={styles.mainStatCard}>
+                <View style={styles.mainStatLeft}>
+                  <Text style={styles.mainStatValue}>{shopsVisited}/{totalShops}</Text>
+                  <Text style={styles.mainStatLabel}>SHOPS VISITED</Text>
+                </View>
+                <View style={styles.mainStatRight}>
+                  <View style={styles.progressCircle}>
+                    <Text style={styles.progressCircleText}>{visitPct}%</Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* Recovery Amount — MUCH BIGGER */}
+              <View style={styles.recoveryHighlight}>
+                <View style={styles.recoveryIconWrap}>
+                  <MaterialIcons name="payments" size={28} color="#FDE68A" />
+                </View>
+                <View style={styles.recoveryTextWrap}>
+                  <Text style={styles.recoveryLabel}>TOTAL RECOVERY</Text>
+                  <Text style={styles.recoveryAmount}>{formatAmount(totalRecovery)}</Text>
+                </View>
+              </View>
+
+              {/* Stats Row — BIGGER CARDS */}
+              <View style={styles.statsRow}>
+                <View style={styles.statBlock}>
+                  <View style={[styles.statBlockIcon, { backgroundColor: 'rgba(96,165,250,0.25)' }]}>
+                    <MaterialIcons name="sms" size={22} color="#93C5FD" />
+                  </View>
+                  <Text style={styles.statBlockValue}>{smsSent}</Text>
+                  <Text style={styles.statBlockLabel}>SMS Sent</Text>
+                </View>
+
+                <View style={styles.statBlock}>
+                  <View style={[styles.statBlockIcon, { backgroundColor: 'rgba(74,222,128,0.25)' }]}>
+                    <MaterialIcons name="chat" size={22} color="#86EFAC" />
+                  </View>
+                  <Text style={styles.statBlockValue}>{whatsappSent}</Text>
+                  <Text style={styles.statBlockLabel}>WhatsApp</Text>
+                </View>
+
+                <View style={styles.statBlock}>
+                  <View style={[styles.statBlockIcon, { backgroundColor: 'rgba(250,204,21,0.25)' }]}>
+                    <MaterialIcons name="notifications-active" size={22} color="#FDE68A" />
+                  </View>
+                  <Text style={styles.statBlockValue}>{totalMessages}</Text>
+                  <Text style={styles.statBlockLabel}>Total Sent</Text>
+                </View>
+
+                <View style={styles.statBlock}>
+                  <View style={[styles.statBlockIcon, { backgroundColor: pendingMessages > 0 ? 'rgba(239,68,68,0.25)' : 'rgba(167,243,208,0.25)' }]}>
+                    <MaterialIcons
+                      name={pendingMessages > 0 ? 'warning' : 'check-circle'}
+                      size={22}
+                      color={pendingMessages > 0 ? '#FCA5A5' : '#A7F3D0'}
+                    />
+                  </View>
+                  <Text style={[styles.statBlockValue, pendingMessages > 0 && { color: '#FCA5A5' }]}>
+                    {pendingMessages}
+                  </Text>
+                  <Text style={styles.statBlockLabel}>Pending</Text>
+                </View>
+              </View>
+
+              {/* Pending Warning */}
               {pendingMessages > 0 ? (
-                <View style={styles.statCard}>
-                  <View style={[styles.statIcon, { backgroundColor: 'rgba(239,68,68,0.2)' }]}>
-                    <MaterialIcons name="warning" size={18} color="#F87171" />
-                  </View>
-                  <Text style={[styles.statValue, { color: '#FCA5A5' }]}>{pendingMessages}</Text>
-                  <Text style={styles.statLabel}>Pending</Text>
+                <View style={styles.pendingBanner}>
+                  <MaterialIcons name="error-outline" size={18} color="#FDE68A" />
+                  <Text style={styles.pendingBannerText}>
+                    {pendingMessages} message{pendingMessages > 1 ? 's' : ''} pending — send now!
+                  </Text>
                 </View>
-              ) : (
-                <View style={styles.statCard}>
-                  <View style={[styles.statIcon, { backgroundColor: 'rgba(167,243,208,0.2)' }]}>
-                    <MaterialIcons name="check-circle" size={18} color="#A7F3D0" />
-                  </View>
-                  <Text style={[styles.statValue, { color: '#A7F3D0' }]}>0</Text>
-                  <Text style={styles.statLabel}>Pending</Text>
-                </View>
-              )}
-            </View>
+              ) : null}
 
-            {/* Pending Warning */}
-            {pendingMessages > 0 ? (
-              <View style={styles.pendingBanner}>
-                <MaterialIcons name="error-outline" size={16} color="#FDE68A" />
-                <Text style={styles.pendingBannerText}>
-                  {pendingMessages} message{pendingMessages > 1 ? 's' : ''} pending — send now!
+              {/* Footer */}
+              <View style={styles.footer}>
+                <View style={styles.footerDivider} />
+                <Text style={styles.footerText}>
+                  {todayLabel} · Al FALAH Credit System
                 </Text>
               </View>
-            ) : null}
-
-            {/* Footer */}
-            <View style={styles.footer}>
-              <View style={styles.footerDot} />
-              <Text style={styles.footerText}>
-                {todayLabel} · Al FALAH Credit System
-              </Text>
             </View>
+
+            {/* Share Button */}
+            <Pressable
+              style={[styles.shareBtn, isCapturing && styles.shareBtnDisabled]}
+              onPress={handleShareAsImage}
+              disabled={isCapturing}
+            >
+              <View style={[styles.shareBtnInner, isCapturing && styles.shareBtnInnerDisabled]}>
+                {isCapturing ? (
+                  <>
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                    <Text style={styles.shareBtnText}>Generating Image...</Text>
+                  </>
+                ) : (
+                  <>
+                    <MaterialIcons name="share" size={22} color="#FFFFFF" />
+                    <Text style={styles.shareBtnText}>Share as Picture</Text>
+                  </>
+                )}
+              </View>
+            </Pressable>
           </View>
-
-          {/* Share Button */}
-          <Pressable
-            style={[styles.shareBtn, isCapturing && styles.shareBtnDisabled]}
-            onPress={handleShareAsImage}
-            disabled={isCapturing}
-          >
-            <View style={[styles.shareBtnInner, isCapturing && styles.shareBtnInnerDisabled]}>
-              {isCapturing ? (
-                <>
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                  <Text style={styles.shareBtnText}>Generating Image...</Text>
-                </>
-              ) : (
-                <>
-                  <MaterialIcons name="share" size={20} color="#FFFFFF" />
-                  <Text style={styles.shareBtnText}>Share as Picture</Text>
-                </>
-              )}
-            </View>
-          </Pressable>
-        </View>
-      </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -304,7 +312,10 @@ const styles = StyleSheet.create({
   },
   backdropFade: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.75)',
+    backgroundColor: 'rgba(0,0,0,0.8)',
+  },
+  keyboardWrap: {
+    flex: 1,
   },
   scrollCenter: {
     flexGrow: 1,
@@ -315,7 +326,7 @@ const styles = StyleSheet.create({
   },
   container: {
     width: '100%',
-    maxWidth: 380,
+    maxWidth: 400,
     position: 'relative',
   },
   closeTop: {
@@ -325,9 +336,9 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   closeTopBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: 'rgba(255,255,255,0.15)',
     alignItems: 'center',
     justifyContent: 'center',
@@ -336,19 +347,27 @@ const styles = StyleSheet.create({
   // ===== REPORT CARD (Solid bg for captureRef) =====
   card: {
     borderRadius: Radius.xl,
-    padding: Spacing.lg,
-    backgroundColor: '#047857', // Solid green — captures properly with view-shot
+    padding: 24,
+    backgroundColor: '#047857',
     overflow: 'hidden',
     ...Shadow.lg,
   },
-  // Gradient-like overlay effect (pure RN Views, captures correctly)
   gradientOverlayTop: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
-    height: 120,
-    backgroundColor: 'rgba(5,150,105,0.6)', // Lighter green overlay at top
+    height: 150,
+    backgroundColor: 'rgba(5,150,105,0.5)',
+    borderRadius: Radius.xl,
+  },
+  gradientOverlayBottom: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 80,
+    backgroundColor: 'rgba(0,0,0,0.15)',
     borderRadius: Radius.xl,
   },
 
@@ -356,14 +375,14 @@ const styles = StyleSheet.create({
   brandRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.sm,
+    gap: 12,
     marginBottom: Spacing.md,
     zIndex: 1,
   },
   brandIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: Radius.md,
+    width: 50,
+    height: 50,
+    borderRadius: 14,
     backgroundColor: 'rgba(255,255,255,0.15)',
     borderWidth: 1.5,
     borderColor: 'rgba(255,255,255,0.3)',
@@ -374,15 +393,15 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   brandName: {
-    fontSize: FontSize.md,
+    fontSize: 20,
     fontWeight: FontWeight.bold,
     color: '#FFFFFF',
     letterSpacing: 0.5,
   },
   brandSub: {
-    fontSize: FontSize.xs,
-    color: 'rgba(255,255,255,0.6)',
-    marginTop: 1,
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.65)',
+    marginTop: 2,
     fontWeight: FontWeight.medium,
   },
   // Separator
@@ -391,11 +410,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.sm,
     marginBottom: Spacing.md,
+    zIndex: 1,
   },
   sepLine: {
     flex: 1,
     height: 1,
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(255,255,255,0.15)',
   },
   sepDiamond: {
     width: 8,
@@ -406,151 +426,162 @@ const styles = StyleSheet.create({
   },
   // Info
   infoSection: {
-    gap: 4,
+    gap: 6,
     marginBottom: Spacing.md,
+    zIndex: 1,
   },
   infoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 8,
   },
   infoText: {
-    fontSize: FontSize.sm,
-    color: 'rgba(255,255,255,0.75)',
+    fontSize: 15,
+    color: 'rgba(255,255,255,0.85)',
     fontWeight: FontWeight.medium,
   },
-  // Main Stat - Visited
+  // Big Divider
+  bigDivider: {
+    height: 1.5,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    marginBottom: Spacing.md,
+    zIndex: 1,
+  },
+  // Main Stat - Visited — BIGGER
   mainStatCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.2)',
-    borderRadius: Radius.md,
-    padding: Spacing.md,
-    marginBottom: Spacing.sm,
+    backgroundColor: 'rgba(0,0,0,0.25)',
+    borderRadius: Radius.lg,
+    padding: 20,
+    marginBottom: Spacing.md,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: 'rgba(255,255,255,0.1)',
+    zIndex: 1,
   },
   mainStatLeft: {
     flex: 1,
   },
   mainStatValue: {
-    fontSize: FontSize.xxl,
+    fontSize: 36,
     fontWeight: FontWeight.bold,
     color: '#FFFFFF',
   },
   mainStatLabel: {
-    fontSize: FontSize.xs,
-    color: 'rgba(255,255,255,0.55)',
-    marginTop: 2,
-    fontWeight: FontWeight.medium,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.6)',
+    marginTop: 4,
+    fontWeight: FontWeight.bold,
+    letterSpacing: 1,
   },
   mainStatRight: {
     alignItems: 'center',
-    gap: 4,
   },
-  progressRingBg: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+  progressCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(167,243,208,0.2)',
     borderWidth: 3,
-    borderColor: 'rgba(255,255,255,0.2)',
+    borderColor: '#A7F3D0',
     alignItems: 'center',
-    justifyContent: 'flex-end',
-    overflow: 'hidden',
-    backgroundColor: 'rgba(0,0,0,0.15)',
+    justifyContent: 'center',
   },
-  progressRingFill: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: '#A7F3D0',
-    borderRadius: 19,
-  },
-  progressPct: {
-    fontSize: FontSize.sm,
+  progressCircleText: {
+    fontSize: 16,
     fontWeight: FontWeight.bold,
     color: '#A7F3D0',
   },
-  // Recovery Highlight
+  // Recovery Highlight — MUCH BIGGER
   recoveryHighlight: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: Spacing.sm,
-    backgroundColor: 'rgba(250,204,21,0.1)',
-    borderRadius: Radius.full,
-    paddingVertical: 10,
-    paddingHorizontal: Spacing.md,
+    gap: 14,
+    backgroundColor: 'rgba(250,204,21,0.12)',
+    borderRadius: Radius.lg,
+    paddingVertical: 18,
+    paddingHorizontal: 18,
     marginBottom: Spacing.md,
-    borderWidth: 1,
-    borderColor: 'rgba(250,204,21,0.2)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(250,204,21,0.25)',
+    zIndex: 1,
+  },
+  recoveryIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(250,204,21,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  recoveryTextWrap: {
+    flex: 1,
+  },
+  recoveryLabel: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.6)',
+    fontWeight: FontWeight.bold,
+    letterSpacing: 1,
+    marginBottom: 2,
   },
   recoveryAmount: {
-    fontSize: FontSize.xl,
+    fontSize: 28,
     fontWeight: FontWeight.bold,
     color: '#FDE68A',
   },
-  recoveryLabel: {
-    fontSize: FontSize.sm,
-    color: 'rgba(255,255,255,0.7)',
-    fontWeight: FontWeight.medium,
-  },
-  // Stats Grid
-  statsGrid: {
+  // Stats Row — BIGGER VERTICAL CARDS
+  statsRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.sm,
-    marginBottom: Spacing.md,
-  },
-  statCard: {
-    width: '47%',
-    flexDirection: 'row',
-    alignItems: 'center',
     gap: 8,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderRadius: Radius.sm,
-    padding: Spacing.sm,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
+    marginBottom: Spacing.md,
+    zIndex: 1,
   },
-  statIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+  statBlock: {
+    flex: 1,
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: Radius.md,
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  statBlockIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
+    marginBottom: 6,
   },
-  statValue: {
-    fontSize: FontSize.md,
+  statBlockValue: {
+    fontSize: 22,
     fontWeight: FontWeight.bold,
     color: '#FFFFFF',
-    flex: 1,
+    marginBottom: 2,
   },
-  statLabel: {
-    fontSize: 9,
-    color: 'rgba(255,255,255,0.5)',
-    fontWeight: FontWeight.medium,
-    textTransform: 'uppercase',
-    letterSpacing: 0.3,
+  statBlockLabel: {
+    fontSize: 10,
+    color: 'rgba(255,255,255,0.55)',
+    fontWeight: FontWeight.semibold,
+    textAlign: 'center',
   },
   // Pending Warning
   pendingBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 8,
     backgroundColor: 'rgba(250,204,21,0.12)',
     borderRadius: Radius.sm,
-    paddingVertical: 8,
-    paddingHorizontal: Spacing.sm,
+    paddingVertical: 10,
+    paddingHorizontal: Spacing.md,
     marginBottom: Spacing.sm,
     borderWidth: 1,
     borderColor: 'rgba(250,204,21,0.25)',
+    zIndex: 1,
   },
   pendingBannerText: {
-    fontSize: FontSize.xs,
+    fontSize: 13,
     fontWeight: FontWeight.bold,
     color: '#FDE68A',
     flex: 1,
@@ -559,17 +590,18 @@ const styles = StyleSheet.create({
   footer: {
     alignItems: 'center',
     paddingTop: Spacing.xs,
+    zIndex: 1,
   },
-  footerDot: {
-    width: 24,
-    height: 3,
-    borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.25)',
+  footerDivider: {
+    width: 40,
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: 'rgba(255,255,255,0.2)',
     marginBottom: Spacing.sm,
   },
   footerText: {
-    fontSize: 10,
-    color: 'rgba(255,255,255,0.35)',
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.4)',
     fontWeight: FontWeight.medium,
   },
 
@@ -588,14 +620,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: Spacing.sm,
-    paddingVertical: 14,
+    paddingVertical: 16,
     backgroundColor: '#047857',
   },
   shareBtnInnerDisabled: {
     backgroundColor: '#4B5563',
   },
   shareBtnText: {
-    fontSize: FontSize.base,
+    fontSize: 16,
     fontWeight: FontWeight.bold,
     color: '#FFFFFF',
   },

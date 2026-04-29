@@ -7,12 +7,12 @@ import {
   Modal,
   Pressable,
   FlatList,
-  ActivityIndicator,
   Alert,
   Animated,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+import { captureRef } from 'react-native-view-shot';
+import * as Sharing from 'expo-sharing';
 import * as Haptics from 'expo-haptics';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
 import { PendingNotification } from '@/services/storage';
@@ -39,6 +39,8 @@ export function PendingMessagesSheet({
 }: PendingMessagesSheetProps) {
   const slideAnim = useRef(new Animated.Value(600)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
+  const receiptRefs = useRef<{ [key: string]: View | null }>({});
+  const [sendingId, setSendingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (visible) {
@@ -81,7 +83,40 @@ export function PendingMessagesSheet({
 
   const handleSendWhatsapp = async (item: PendingNotification) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setSendingId(item.id);
     try {
+      // Try to capture receipt as image first
+      const receiptView = receiptRefs.current[item.id];
+      if (receiptView) {
+        try {
+          await new Promise(r => setTimeout(r, 200));
+          const imageUri = await captureRef(receiptView, {
+            format: 'png',
+            quality: 1.0,
+            result: 'tmpfile',
+          });
+
+          if (imageUri) {
+            console.log('[PendingMessages] Receipt image captured:', imageUri);
+            const isAvailable = await Sharing.isAvailableAsync();
+            if (isAvailable) {
+              await Sharing.shareAsync(imageUri, {
+                mimeType: 'image/png',
+                dialogTitle: `Share Receipt to ${item.shopName}`,
+                UTI: 'public.png',
+              });
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              onSendWhatsapp(item.id);
+              setSendingId(null);
+              return;
+            }
+          }
+        } catch (captureErr) {
+          console.warn('[PendingMessages] Image capture failed, falling back to text:', captureErr);
+        }
+      }
+
+      // Fallback: Send text message via WhatsApp
       await sendRecoveryWhatsapp({
         shopPhone: item.shopPhone,
         shopName: item.shopName,
@@ -94,10 +129,66 @@ export function PendingMessagesSheet({
     } catch (err) {
       console.error('[PendingMessages] WhatsApp error:', err);
     }
+    setSendingId(null);
   };
+
+  const today = new Date().toLocaleDateString('en-PK', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
 
   const renderItem = ({ item }: { item: PendingNotification }) => (
     <View style={styles.pendingCard}>
+      {/* Hidden Receipt for Image Capture */}
+      <View style={styles.hiddenReceipt}>
+        <View
+          ref={(ref) => { receiptRefs.current[item.id] = ref; }}
+          collapsable={false}
+          style={styles.receiptCard}
+        >
+          <View style={styles.receiptGradient} />
+          <View style={styles.receiptHeader}>
+            <View style={styles.receiptLogo}>
+              <MaterialIcons name="account-balance" size={18} color="#FFFFFF" />
+            </View>
+            <View>
+              <Text style={styles.receiptBrandName}>Al FALAH Credit System</Text>
+              <Text style={styles.receiptBrandSub}>Payment Receipt</Text>
+            </View>
+          </View>
+          <View style={styles.receiptSep} />
+          <View style={styles.receiptRow}>
+            <Text style={styles.receiptRowLabel}>Shop</Text>
+            <Text style={styles.receiptRowValue}>{item.shopName}</Text>
+          </View>
+          <View style={styles.receiptRow}>
+            <Text style={styles.receiptRowLabel}>Date</Text>
+            <Text style={styles.receiptRowValue}>{today}</Text>
+          </View>
+          <View style={styles.receiptAmountBox}>
+            <View style={styles.receiptAmtRow}>
+              <Text style={styles.receiptAmtLabel}>Opening Balance</Text>
+              <Text style={styles.receiptAmtVal}>{formatPKR(item.openingBalance)}</Text>
+            </View>
+            <View style={styles.receiptAmtSep} />
+            <View style={styles.receiptAmtRow}>
+              <Text style={styles.receiptAmtLabel}>Recovery Received</Text>
+              <Text style={[styles.receiptAmtVal, { color: '#A7F3D0' }]}>{formatPKR(item.recoveryAmount)}</Text>
+            </View>
+            <View style={styles.receiptAmtSep} />
+            <View style={[styles.receiptAmtRow, styles.receiptRemainingRow]}>
+              <Text style={[styles.receiptAmtLabel, { color: '#FFFFFF', fontWeight: FontWeight.bold }]}>Remaining Balance</Text>
+              <Text style={[styles.receiptAmtVal, { color: '#FDE68A', fontSize: 18 }]}>{formatPKR(item.remainingBalance)}</Text>
+            </View>
+          </View>
+          <View style={styles.receiptThanksRow}>
+            <MaterialIcons name="verified" size={12} color="#A7F3D0" />
+            <Text style={styles.receiptThanksText}>Thank you! · Al FALAH Credit System</Text>
+          </View>
+        </View>
+      </View>
+
       {/* Shop info */}
       <View style={styles.pendingInfo}>
         <View style={styles.pendingIconWrap}>
@@ -122,22 +213,25 @@ export function PendingMessagesSheet({
       {/* Action buttons */}
       <View style={styles.pendingActions}>
         <Pressable
-          style={({ pressed }) => [styles.pendingBtnSms, pressed && styles.btnPressed]}
+          style={styles.pendingBtnSms}
           onPress={() => handleSendSms(item)}
         >
-          <LinearGradient colors={['#059669', '#047857']} style={styles.pendingBtnGradient}>
+          <View style={styles.pendingBtnGradient}>
             <MaterialIcons name="sms" size={16} color="#FFFFFF" />
             <Text style={styles.pendingBtnText}>SMS</Text>
-          </LinearGradient>
+          </View>
         </Pressable>
         <Pressable
-          style={({ pressed }) => [styles.pendingBtnWa, pressed && styles.btnPressed]}
+          style={styles.pendingBtnWa}
           onPress={() => handleSendWhatsapp(item)}
+          disabled={sendingId === item.id}
         >
-          <LinearGradient colors={['#25D366', '#128C7E']} style={styles.pendingBtnGradient}>
+          <View style={styles.pendingBtnWaGradient}>
             <MaterialIcons name="chat" size={16} color="#FFFFFF" />
-            <Text style={styles.pendingBtnText}>WhatsApp</Text>
-          </LinearGradient>
+            <Text style={styles.pendingBtnText}>
+              {sendingId === item.id ? 'Sending...' : 'WhatsApp'}
+            </Text>
+          </View>
         </Pressable>
       </View>
     </View>
@@ -405,14 +499,21 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingVertical: 10,
     paddingHorizontal: Spacing.sm,
+    backgroundColor: Colors.primary,
+  },
+  pendingBtnWaGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingVertical: 10,
+    paddingHorizontal: Spacing.sm,
+    backgroundColor: '#25D366',
   },
   pendingBtnText: {
     fontSize: FontSize.xs,
     fontWeight: FontWeight.bold,
     color: '#FFFFFF',
-  },
-  btnPressed: {
-    opacity: 0.8,
   },
   emptyState: {
     alignItems: 'center',
@@ -466,5 +567,120 @@ const styles = StyleSheet.create({
     fontSize: FontSize.sm,
     fontWeight: FontWeight.medium,
     color: Colors.textSecondary,
+  },
+
+  // Hidden receipt for image capture
+  hiddenReceipt: {
+    position: 'absolute',
+    left: -9999,
+    top: -9999,
+    opacity: 0,
+  },
+  receiptCard: {
+    width: 320,
+    borderRadius: Radius.xl,
+    padding: 20,
+    backgroundColor: '#047857',
+    overflow: 'hidden',
+  },
+  receiptGradient: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 80,
+    backgroundColor: 'rgba(5,150,105,0.5)',
+    borderRadius: Radius.xl,
+  },
+  receiptHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
+    zIndex: 1,
+  },
+  receiptLogo: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  receiptBrandName: {
+    fontSize: 15,
+    fontWeight: FontWeight.bold,
+    color: '#FFFFFF',
+  },
+  receiptBrandSub: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.6)',
+  },
+  receiptSep: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    marginBottom: 10,
+    zIndex: 1,
+  },
+  receiptRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+    zIndex: 1,
+  },
+  receiptRowLabel: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.5)',
+  },
+  receiptRowValue: {
+    fontSize: 13,
+    fontWeight: FontWeight.bold,
+    color: '#FFFFFF',
+  },
+  receiptAmountBox: {
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    borderRadius: Radius.md,
+    padding: 12,
+    marginTop: 6,
+    marginBottom: 8,
+    zIndex: 1,
+  },
+  receiptAmtRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  receiptAmtLabel: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.7)',
+  },
+  receiptAmtVal: {
+    fontSize: 15,
+    fontWeight: FontWeight.bold,
+    color: '#FFFFFF',
+  },
+  receiptAmtSep: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    marginVertical: 2,
+  },
+  receiptRemainingRow: {
+    backgroundColor: 'rgba(250,204,21,0.08)',
+    marginHorizontal: -6,
+    paddingHorizontal: 6,
+    borderRadius: 4,
+  },
+  receiptThanksRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    zIndex: 1,
+  },
+  receiptThanksText: {
+    fontSize: 10,
+    color: 'rgba(255,255,255,0.4)',
   },
 });

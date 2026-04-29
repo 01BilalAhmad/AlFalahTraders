@@ -1,5 +1,5 @@
 // Powered by OnSpace.AI
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -7,16 +7,19 @@ import {
   Modal,
   Pressable,
   ActivityIndicator,
+  Alert,
+  Animated,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
+import { captureRef } from 'react-native-view-shot';
+import * as Sharing from 'expo-sharing';
+import * as Linking from 'expo-linking';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
 import { sendRecoverySms } from '@/utils/sendRecoverySms';
 import { sendRecoveryWhatsapp } from '@/utils/sendRecoveryWhatsapp';
 import { formatPKR } from '@/utils/format';
 
-export type NotificationMethod = 'sms' | 'whatsapp' | 'skip';
-
-interface NotifPayload {
+interface NotificationPayload {
   shopPhone: string;
   shopName: string;
   openingBalance: number;
@@ -24,121 +27,234 @@ interface NotifPayload {
   remainingBalance: number;
 }
 
-interface Props {
+export type NotificationMethod = 'sms' | 'whatsapp';
+
+interface NotificationChoiceProps {
   visible: boolean;
-  payload: NotifPayload | null;
+  payload: NotificationPayload | null;
   onDone: (method: NotificationMethod) => void;
 }
 
-export function NotificationChoice({ visible, payload, onDone }: Props) {
-  const [sending, setSending] = useState<'sms' | 'whatsapp' | null>(null);
+export function NotificationChoice({ visible, payload, onDone }: NotificationChoiceProps) {
+  const [sending, setSending] = useState(false);
+  const scale = useRef(new Animated.Value(0.8)).current;
+  const opacity = useRef(new Animated.Value(0)).current;
+  const receiptRef = useRef<View>(null);
 
-  if (!payload) return null;
+  useEffect(() => {
+    if (visible) {
+      setSending(false);
+      Animated.parallel([
+        Animated.spring(scale, { toValue: 1, useNativeDriver: true, tension: 80, friction: 10 }),
+        Animated.timing(opacity, { toValue: 1, duration: 200, useNativeDriver: true }),
+      ]).start();
+    } else {
+      scale.setValue(0.8);
+      opacity.setValue(0);
+    }
+  }, [visible]);
+
+  const today = new Date().toLocaleDateString('en-PK', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
 
   const handleSms = async () => {
-    setSending('sms');
+    if (!payload) return;
+    setSending(true);
     try {
-      await sendRecoverySms({
-        shopPhone: payload.shopPhone,
-        shopName: payload.shopName,
-        openingBalance: payload.openingBalance,
-        recoveryAmount: payload.recoveryAmount,
-        remainingBalance: payload.remainingBalance,
-      });
-    } catch { /* best effort */ }
-    setSending(null);
+      const sent = await sendRecoverySms(payload);
+      if (sent) {
+        console.log('[NotificationChoice] SMS sent successfully');
+      }
+    } catch (err) {
+      console.error('[NotificationChoice] SMS error:', err);
+    }
+    setSending(false);
     onDone('sms');
   };
 
   const handleWhatsapp = async () => {
-    setSending('whatsapp');
+    if (!payload) return;
+    setSending(true);
     try {
-      await sendRecoveryWhatsapp({
-        shopPhone: payload.shopPhone,
-        shopName: payload.shopName,
-        openingBalance: payload.openingBalance,
-        recoveryAmount: payload.recoveryAmount,
-        remainingBalance: payload.remainingBalance,
-      });
-    } catch { /* best effort */ }
-    setSending(null);
+      // First try to capture receipt as image and share via WhatsApp
+      if (receiptRef.current) {
+        try {
+          await new Promise(r => setTimeout(r, 300));
+          const imageUri = await captureRef(receiptRef, {
+            format: 'png',
+            quality: 1.0,
+            result: 'tmpfile',
+          });
+
+          if (imageUri) {
+            console.log('[NotificationChoice] Receipt image captured:', imageUri);
+            // Share image via native share sheet
+            const isAvailable = await Sharing.isAvailableAsync();
+            if (isAvailable) {
+              await Sharing.shareAsync(imageUri, {
+                mimeType: 'image/png',
+                dialogTitle: `Share Receipt to ${payload.shopName}`,
+                UTI: 'public.png',
+              });
+              onDone('whatsapp');
+              setSending(false);
+              return;
+            }
+          }
+        } catch (captureErr) {
+          console.warn('[NotificationChoice] Image capture failed, falling back to text:', captureErr);
+        }
+      }
+
+      // Fallback: Send text message via WhatsApp deep link
+      await sendRecoveryWhatsapp(payload);
+    } catch (err) {
+      console.error('[NotificationChoice] WhatsApp error:', err);
+    }
+    setSending(false);
     onDone('whatsapp');
   };
 
+  if (!payload) return null;
+
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={() => onDone('skip')}>
-      <Pressable style={styles.backdrop} onPress={() => onDone('skip')} />
-      <View style={styles.centered}>
-        <View style={styles.sheet}>
-          {/* Header */}
-          <View style={styles.header}>
-            <View style={styles.headerIcon}>
-              <MaterialIcons name="notifications-active" size={22} color="#FFFFFF" />
+    <Modal visible={visible} transparent animationType="none">
+      <Pressable style={styles.backdrop} disabled={sending}>
+        <Animated.View style={[styles.backdropFade, { opacity }]} />
+      </Pressable>
+
+      <View style={styles.center}>
+        <Animated.View style={[styles.card, { transform: [{ scale }], opacity }]}>
+          {/* Header icon */}
+          <View style={styles.iconWrap}>
+            <View style={styles.iconGradient}>
+              <MaterialIcons name="notifications-active" size={28} color="#FFFFFF" />
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.headerTitle}>Notify Customer</Text>
-              <Text style={styles.headerSub} numberOfLines={1}>{payload.shopName}</Text>
-            </View>
-            <Pressable onPress={() => onDone('skip')} hitSlop={12}>
-              <MaterialIcons name="close" size={20} color={Colors.textMuted} />
-            </Pressable>
           </View>
 
-          {/* Recovery Summary */}
-          <View style={styles.summary}>
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Opening Balance</Text>
-              <Text style={styles.summaryValue}>{formatPKR(payload.openingBalance)}</Text>
+          <Text style={styles.title}>Send Recovery Notification</Text>
+          <Text style={styles.subtitle}>
+            Choose how to notify <Text style={styles.shopHighlight}>{payload.shopName}</Text>
+          </Text>
+
+          {/* Hidden Receipt View for Image Capture */}
+          <View style={styles.hiddenReceipt}>
+            <View ref={receiptRef} collapsable={false} style={styles.receiptCard}>
+              {/* Receipt Content - solid bg for captureRef */}
+              <View style={styles.receiptGradientOverlay} />
+              <View style={styles.receiptHeader}>
+                <View style={styles.receiptLogoBox}>
+                  <MaterialIcons name="account-balance" size={22} color="#FFFFFF" />
+                </View>
+                <View>
+                  <Text style={styles.receiptTitle}>Al FALAH Credit System</Text>
+                  <Text style={styles.receiptSub}>Payment Receipt</Text>
+                </View>
+              </View>
+              <View style={styles.receiptDivider} />
+              <View style={styles.receiptInfoRow}>
+                <MaterialIcons name="store" size={14} color="rgba(255,255,255,0.5)" />
+                <Text style={styles.receiptInfoLabel}>Shop:</Text>
+                <Text style={styles.receiptInfoValue}>{payload.shopName}</Text>
+              </View>
+              <View style={styles.receiptInfoRow}>
+                <MaterialIcons name="calendar-today" size={14} color="rgba(255,255,255,0.5)" />
+                <Text style={styles.receiptInfoLabel}>Date:</Text>
+                <Text style={styles.receiptInfoValue}>{today}</Text>
+              </View>
+              <View style={styles.receiptAmountBox}>
+                <View style={styles.receiptAmountRow}>
+                  <Text style={styles.receiptAmountLabel}>Opening Balance</Text>
+                  <Text style={styles.receiptAmountVal}>{formatPKR(payload.openingBalance)}</Text>
+                </View>
+                <View style={styles.receiptAmtSep} />
+                <View style={styles.receiptAmountRow}>
+                  <Text style={styles.receiptAmountLabel}>Recovery Received</Text>
+                  <Text style={[styles.receiptAmountVal, { color: '#A7F3D0' }]}>{formatPKR(payload.recoveryAmount)}</Text>
+                </View>
+                <View style={styles.receiptAmtSep} />
+                <View style={[styles.receiptAmountRow, styles.receiptRemainingRow]}>
+                  <Text style={[styles.receiptAmountLabel, { color: '#FFFFFF', fontWeight: FontWeight.bold }]}>Remaining Balance</Text>
+                  <Text style={[styles.receiptAmountVal, { color: '#FDE68A', fontSize: 20 }]}>{formatPKR(payload.remainingBalance)}</Text>
+                </View>
+              </View>
+              <View style={styles.receiptFooterRow}>
+                <MaterialIcons name="verified" size={14} color="#A7F3D0" />
+                <Text style={styles.receiptFooterText}>Thank you! · Al FALAH Credit System</Text>
+              </View>
             </View>
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Recovery</Text>
-              <Text style={[styles.summaryValue, { color: Colors.primary }]}>
-                - {formatPKR(payload.recoveryAmount)}
+          </View>
+
+          {/* Shop info */}
+          <View style={styles.infoCard}>
+            <View style={styles.infoRow}>
+              <View style={styles.infoDot} />
+              <Text style={styles.infoLabel}>Recovery Amount</Text>
+              <Text style={styles.infoValue}>
+                Rs. {payload.recoveryAmount.toLocaleString()}
               </Text>
             </View>
-            <View style={[styles.summaryRow, styles.summaryTotal]}>
-              <Text style={styles.summaryTotalLabel}>Remaining</Text>
-              <Text style={[styles.summaryValue, styles.summaryTotalValue]}>
-                {formatPKR(payload.remainingBalance)}
+            <View style={styles.infoDivider} />
+            <View style={styles.infoRow}>
+              <View style={[styles.infoDot, { backgroundColor: '#FCA5A5' }]} />
+              <Text style={styles.infoLabel}>Remaining Balance</Text>
+              <Text style={[styles.infoValue, { color: Colors.danger }]}>
+                Rs. {payload.remainingBalance.toLocaleString()}
               </Text>
             </View>
           </View>
 
-          <Text style={styles.question}>Send recovery notification to customer?</Text>
+          <Text style={styles.mandatoryNote}>
+            * Notification is compulsory for every recovery
+          </Text>
 
-          {/* Action Buttons */}
-          <View style={styles.actions}>
-            <Pressable
-              style={[styles.actionBtn, styles.smsBtn, sending === 'whatsapp' && styles.disabled]}
-              onPress={handleSms}
-              disabled={sending !== null}
-            >
-              {sending === 'sms' ? (
+          {/* SMS Button */}
+          <Pressable
+            style={({ pressed }) => [styles.btnSms, pressed && styles.btnPressed]}
+            onPress={handleSms}
+            disabled={sending}
+          >
+            <View style={styles.btnGradient}>
+              {sending ? (
                 <ActivityIndicator size="small" color="#FFFFFF" />
               ) : (
-                <MaterialIcons name="sms" size={20} color="#FFFFFF" />
+                <>
+                  <MaterialIcons name="sms" size={22} color="#FFFFFF" />
+                  <View style={styles.btnTextWrap}>
+                    <Text style={styles.btnTitle}>Send via SMS</Text>
+                    <Text style={styles.btnSub}>Direct send from SIM (no app opens)</Text>
+                  </View>
+                  <MaterialIcons name="chevron-right" size={20} color="rgba(255,255,255,0.6)" />
+                </>
               )}
-              <Text style={styles.actionBtnText}>SMS</Text>
-            </Pressable>
-
-            <Pressable
-              style={[styles.actionBtn, styles.waBtn, sending === 'sms' && styles.disabled]}
-              onPress={handleWhatsapp}
-              disabled={sending !== null}
-            >
-              {sending === 'whatsapp' ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              ) : (
-                <MaterialIcons name="chat" size={20} color="#FFFFFF" />
-              )}
-              <Text style={styles.actionBtnText}>WhatsApp</Text>
-            </Pressable>
-          </View>
-
-          <Pressable style={styles.skipBtn} onPress={() => onDone('skip')}>
-            <Text style={styles.skipText}>Skip for now</Text>
+            </View>
           </Pressable>
-        </View>
+
+          {/* WhatsApp Button */}
+          <Pressable
+            style={({ pressed }) => [styles.btnWhatsapp, pressed && styles.btnPressed]}
+            onPress={handleWhatsapp}
+            disabled={sending}
+          >
+            <View style={styles.btnWhatsappGradient}>
+              {sending ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <>
+                  <MaterialIcons name="chat" size={22} color="#FFFFFF" />
+                  <View style={styles.btnTextWrap}>
+                    <Text style={styles.btnTitle}>Send via WhatsApp</Text>
+                    <Text style={styles.btnSub}>Receipt picture + message on WhatsApp</Text>
+                  </View>
+                  <MaterialIcons name="chevron-right" size={20} color="rgba(255,255,255,0.6)" />
+                </>
+              )}
+            </View>
+          </Pressable>
+        </Animated.View>
       </View>
     </Modal>
   );
@@ -147,125 +263,260 @@ export function NotificationChoice({ visible, payload, onDone }: Props) {
 const styles = StyleSheet.create({
   backdrop: {
     ...StyleSheet.absoluteFillObject,
+    zIndex: 0,
+  },
+  backdropFade: {
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.55)',
   },
-  centered: {
+  center: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: Spacing.lg,
+    padding: Spacing.xl,
+    zIndex: 1,
   },
-  sheet: {
+  card: {
+    backgroundColor: Colors.background,
+    borderRadius: Radius.xxl,
+    padding: Spacing.lg,
     width: '100%',
-    maxWidth: 360,
-    backgroundColor: Colors.surface,
-    borderRadius: Radius.xl,
-    padding: Spacing.lg,
-    ...Shadow.lg,
+    maxWidth: 380,
+    ...Shadow.xl,
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
+  iconWrap: {
+    alignSelf: 'center',
     marginBottom: Spacing.md,
   },
-  headerIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  iconGradient: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     backgroundColor: Colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
+    ...Shadow.md,
   },
-  headerTitle: {
-    fontSize: FontSize.md,
+  title: {
+    fontSize: FontSize.lg,
     fontWeight: FontWeight.bold,
     color: Colors.text,
+    textAlign: 'center',
+    marginBottom: Spacing.xs,
   },
-  headerSub: {
-    fontSize: FontSize.sm,
-    color: Colors.textSecondary,
-    marginTop: 1,
-  },
-  summary: {
-    backgroundColor: Colors.background,
-    borderRadius: Radius.md,
-    padding: Spacing.md,
-    gap: Spacing.xs,
-    marginBottom: Spacing.md,
-  },
-  summaryRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  summaryTotal: {
-    marginTop: Spacing.xs,
-    paddingTop: Spacing.xs,
-    borderTopWidth: 1,
-    borderTopColor: Colors.border,
-  },
-  summaryLabel: {
-    fontSize: FontSize.sm,
-    color: Colors.textSecondary,
-    fontWeight: FontWeight.medium,
-  },
-  summaryTotalLabel: {
-    fontSize: FontSize.sm,
-    color: Colors.text,
-    fontWeight: FontWeight.bold,
-  },
-  summaryValue: {
-    fontSize: FontSize.sm,
-    color: Colors.text,
-    fontWeight: FontWeight.semibold,
-  },
-  summaryTotalValue: {
-    fontSize: FontSize.base,
-    color: Colors.danger,
-    fontWeight: FontWeight.bold,
-  },
-  question: {
+  subtitle: {
     fontSize: FontSize.sm,
     color: Colors.textSecondary,
     textAlign: 'center',
     marginBottom: Spacing.md,
   },
-  actions: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
-    marginBottom: Spacing.sm,
+  shopHighlight: {
+    fontWeight: FontWeight.bold,
+    color: Colors.primary,
   },
-  actionBtn: {
+
+  // Hidden receipt for image capture
+  hiddenReceipt: {
+    position: 'absolute',
+    left: -9999,
+    top: -9999,
+    opacity: 0,
+  },
+  receiptCard: {
+    width: 340,
+    borderRadius: Radius.xl,
+    padding: 24,
+    backgroundColor: '#047857',
+    overflow: 'hidden',
+  },
+  receiptGradientOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 100,
+    backgroundColor: 'rgba(5,150,105,0.5)',
+    borderRadius: Radius.xl,
+  },
+  receiptHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 12,
+    zIndex: 1,
+  },
+  receiptLogoBox: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  receiptTitle: {
+    fontSize: 17,
+    fontWeight: FontWeight.bold,
+    color: '#FFFFFF',
+  },
+  receiptSub: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.6)',
+    fontWeight: FontWeight.medium,
+  },
+  receiptDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    marginBottom: 12,
+    zIndex: 1,
+  },
+  receiptInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+    zIndex: 1,
+  },
+  receiptInfoLabel: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.5)',
+    fontWeight: FontWeight.medium,
+  },
+  receiptInfoValue: {
     flex: 1,
+    fontSize: 14,
+    fontWeight: FontWeight.bold,
+    color: '#FFFFFF',
+    textAlign: 'right',
+  },
+  receiptAmountBox: {
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    borderRadius: Radius.md,
+    padding: 14,
+    marginTop: 8,
+    marginBottom: 10,
+    zIndex: 1,
+  },
+  receiptAmountRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 6,
+  },
+  receiptAmountLabel: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.7)',
+    fontWeight: FontWeight.medium,
+  },
+  receiptAmountVal: {
+    fontSize: 16,
+    fontWeight: FontWeight.bold,
+    color: '#FFFFFF',
+  },
+  receiptAmtSep: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    marginVertical: 2,
+  },
+  receiptRemainingRow: {
+    backgroundColor: 'rgba(250,204,21,0.08)',
+    marginHorizontal: -8,
+    paddingHorizontal: 8,
+    borderRadius: Radius.sm,
+  },
+  receiptFooterRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    paddingVertical: 13,
+    zIndex: 1,
+  },
+  receiptFooterText: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.4)',
+    fontWeight: FontWeight.medium,
+  },
+
+  // Info card
+  infoCard: {
+    backgroundColor: Colors.surface,
     borderRadius: Radius.md,
+    padding: Spacing.md,
+    marginBottom: Spacing.md,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
   },
-  smsBtn: {
-    backgroundColor: Colors.blue,
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    paddingVertical: 4,
   },
-  waBtn: {
-    backgroundColor: '#22C55E',
+  infoDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: Colors.primary,
   },
-  disabled: {
-    opacity: 0.5,
-  },
-  actionBtnText: {
+  infoLabel: {
+    flex: 1,
     fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+  },
+  infoValue: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.bold,
+    color: Colors.text,
+  },
+  infoDivider: {
+    height: 1,
+    backgroundColor: Colors.borderLight,
+    marginVertical: 4,
+  },
+  mandatoryNote: {
+    fontSize: FontSize.xs,
+    color: Colors.danger,
+    textAlign: 'center',
+    marginBottom: Spacing.md,
+    fontWeight: FontWeight.medium,
+  },
+  btnSms: {
+    borderRadius: Radius.md,
+    marginBottom: Spacing.sm,
+    overflow: 'hidden',
+  },
+  btnWhatsapp: {
+    borderRadius: Radius.md,
+    overflow: 'hidden',
+  },
+  btnGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: Spacing.md,
+    backgroundColor: Colors.primary,
+  },
+  btnWhatsappGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: Spacing.md,
+    backgroundColor: '#25D366',
+  },
+  btnPressed: {
+    opacity: 0.8,
+  },
+  btnTextWrap: {
+    flex: 1,
+    marginLeft: Spacing.sm,
+  },
+  btnTitle: {
+    fontSize: FontSize.base,
     fontWeight: FontWeight.bold,
     color: '#FFFFFF',
   },
-  skipBtn: {
-    alignItems: 'center',
-    paddingVertical: Spacing.sm,
-  },
-  skipText: {
-    fontSize: FontSize.sm,
-    color: Colors.textMuted,
-    fontWeight: FontWeight.medium,
+  btnSub: {
+    fontSize: FontSize.xs,
+    color: 'rgba(255,255,255,0.8)',
+    marginTop: 1,
   },
 });
