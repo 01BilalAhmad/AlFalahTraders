@@ -1,5 +1,5 @@
 // Powered by OnSpace.AI
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -7,17 +7,16 @@ import {
   Modal,
   Pressable,
   ActivityIndicator,
-  Alert,
-  Animated,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import * as Haptics from 'expo-haptics';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
 import { sendRecoverySms } from '@/utils/sendRecoverySms';
 import { sendRecoveryWhatsapp } from '@/utils/sendRecoveryWhatsapp';
+import { formatPKR } from '@/utils/format';
 
-interface NotificationPayload {
+export type NotificationMethod = 'sms' | 'whatsapp' | 'skip';
+
+interface NotifPayload {
   shopPhone: string;
   shopName: string;
   openingBalance: number;
@@ -25,160 +24,121 @@ interface NotificationPayload {
   remainingBalance: number;
 }
 
-export type NotificationMethod = 'sms' | 'whatsapp';
-
-interface NotificationChoiceProps {
+interface Props {
   visible: boolean;
-  payload: NotificationPayload | null;
+  payload: NotifPayload | null;
   onDone: (method: NotificationMethod) => void;
 }
 
-export function NotificationChoice({ visible, payload, onDone }: NotificationChoiceProps) {
-  const [sending, setSending] = useState(false);
-  const scale = useRef(new Animated.Value(0.8)).current;
-  const opacity = useRef(new Animated.Value(0)).current;
+export function NotificationChoice({ visible, payload, onDone }: Props) {
+  const [sending, setSending] = useState<'sms' | 'whatsapp' | null>(null);
 
-  useEffect(() => {
-    if (visible) {
-      setSending(false);
-      Animated.parallel([
-        Animated.spring(scale, { toValue: 1, useNativeDriver: true, tension: 80, friction: 10 }),
-        Animated.timing(opacity, { toValue: 1, duration: 200, useNativeDriver: true }),
-      ]).start();
-    } else {
-      scale.setValue(0.8);
-      opacity.setValue(0);
-    }
-  }, [visible]);
+  if (!payload) return null;
 
   const handleSms = async () => {
-    if (!payload) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setSending(true);
+    setSending('sms');
     try {
-      const sent = await sendRecoverySms(payload);
-      if (sent) {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      }
-    } catch (err) {
-      console.error('[NotificationChoice] SMS error:', err);
-    }
-    setSending(false);
+      await sendRecoverySms({
+        shopPhone: payload.shopPhone,
+        shopName: payload.shopName,
+        openingBalance: payload.openingBalance,
+        recoveryAmount: payload.recoveryAmount,
+        remainingBalance: payload.remainingBalance,
+      });
+    } catch { /* best effort */ }
+    setSending(null);
     onDone('sms');
   };
 
   const handleWhatsapp = async () => {
-    if (!payload) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setSending(true);
+    setSending('whatsapp');
     try {
-      await sendRecoveryWhatsapp(payload);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } catch (err) {
-      console.error('[NotificationChoice] WhatsApp error:', err);
-    }
-    setSending(false);
+      await sendRecoveryWhatsapp({
+        shopPhone: payload.shopPhone,
+        shopName: payload.shopName,
+        openingBalance: payload.openingBalance,
+        recoveryAmount: payload.recoveryAmount,
+        remainingBalance: payload.remainingBalance,
+      });
+    } catch { /* best effort */ }
+    setSending(null);
     onDone('whatsapp');
   };
 
-  if (!payload) return null;
-
   return (
-    <Modal visible={visible} transparent animationType="none">
-      <Pressable style={styles.backdrop} disabled={sending}>
-        <Animated.View style={[styles.backdropFade, { opacity }]} />
-      </Pressable>
-
-      <View style={styles.center}>
-        <Animated.View style={[styles.card, { transform: [{ scale }], opacity }]}>
-          {/* Header icon */}
-          <View style={styles.iconWrap}>
-            <LinearGradient
-              colors={['#059669', '#047857']}
-              style={styles.iconGradient}
-            >
-              <MaterialIcons name="notifications-active" size={28} color="#FFFFFF" />
-            </LinearGradient>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={() => onDone('skip')}>
+      <Pressable style={styles.backdrop} onPress={() => onDone('skip')} />
+      <View style={styles.centered}>
+        <View style={styles.sheet}>
+          {/* Header */}
+          <View style={styles.header}>
+            <View style={styles.headerIcon}>
+              <MaterialIcons name="notifications-active" size={22} color="#FFFFFF" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.headerTitle}>Notify Customer</Text>
+              <Text style={styles.headerSub} numberOfLines={1}>{payload.shopName}</Text>
+            </View>
+            <Pressable onPress={() => onDone('skip')} hitSlop={12}>
+              <MaterialIcons name="close" size={20} color={Colors.textMuted} />
+            </Pressable>
           </View>
 
-          <Text style={styles.title}>Send Recovery Notification</Text>
-          <Text style={styles.subtitle}>
-            Choose how to notify <Text style={styles.shopHighlight}>{payload.shopName}</Text>
-          </Text>
-
-          {/* Shop info */}
-          <View style={styles.infoCard}>
-            <View style={styles.infoRow}>
-              <View style={styles.infoDot} />
-              <Text style={styles.infoLabel}>Recovery Amount</Text>
-              <Text style={styles.infoValue}>
-                Rs. {payload.recoveryAmount.toLocaleString()}
+          {/* Recovery Summary */}
+          <View style={styles.summary}>
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Opening Balance</Text>
+              <Text style={styles.summaryValue}>{formatPKR(payload.openingBalance)}</Text>
+            </View>
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Recovery</Text>
+              <Text style={[styles.summaryValue, { color: Colors.primary }]}>
+                - {formatPKR(payload.recoveryAmount)}
               </Text>
             </View>
-            <View style={styles.infoDivider} />
-            <View style={styles.infoRow}>
-              <View style={[styles.infoDot, { backgroundColor: '#FCA5A5' }]} />
-              <Text style={styles.infoLabel}>Remaining Balance</Text>
-              <Text style={[styles.infoValue, { color: Colors.danger }]}>
-                Rs. {payload.remainingBalance.toLocaleString()}
+            <View style={[styles.summaryRow, styles.summaryTotal]}>
+              <Text style={styles.summaryTotalLabel}>Remaining</Text>
+              <Text style={[styles.summaryValue, styles.summaryTotalValue]}>
+                {formatPKR(payload.remainingBalance)}
               </Text>
             </View>
           </View>
 
-          <Text style={styles.mandatoryNote}>
-            * Notification is compulsory for every recovery
-          </Text>
+          <Text style={styles.question}>Send recovery notification to customer?</Text>
 
-          {/* SMS Button */}
-          <Pressable
-            style={({ pressed }) => [styles.btnSms, pressed && styles.btnPressed]}
-            onPress={handleSms}
-            disabled={sending}
-          >
-            <LinearGradient
-              colors={['#059669', '#047857']}
-              style={styles.btnGradient}
+          {/* Action Buttons */}
+          <View style={styles.actions}>
+            <Pressable
+              style={[styles.actionBtn, styles.smsBtn, sending === 'whatsapp' && styles.disabled]}
+              onPress={handleSms}
+              disabled={sending !== null}
             >
-              {sending ? (
+              {sending === 'sms' ? (
                 <ActivityIndicator size="small" color="#FFFFFF" />
               ) : (
-                <>
-                  <MaterialIcons name="sms" size={22} color="#FFFFFF" />
-                  <View style={styles.btnTextWrap}>
-                    <Text style={styles.btnTitle}>Send via SMS</Text>
-                    <Text style={styles.btnSub}>Direct send from SIM (no app opens)</Text>
-                  </View>
-                  <MaterialIcons name="chevron-right" size={20} color="rgba(255,255,255,0.6)" />
-                </>
+                <MaterialIcons name="sms" size={20} color="#FFFFFF" />
               )}
-            </LinearGradient>
-          </Pressable>
+              <Text style={styles.actionBtnText}>SMS</Text>
+            </Pressable>
 
-          {/* WhatsApp Button */}
-          <Pressable
-            style={({ pressed }) => [styles.btnWhatsapp, pressed && styles.btnPressed]}
-            onPress={handleWhatsapp}
-            disabled={sending}
-          >
-            <LinearGradient
-              colors={['#25D366', '#128C7E']}
-              style={styles.btnGradient}
+            <Pressable
+              style={[styles.actionBtn, styles.waBtn, sending === 'sms' && styles.disabled]}
+              onPress={handleWhatsapp}
+              disabled={sending !== null}
             >
-              {sending ? (
+              {sending === 'whatsapp' ? (
                 <ActivityIndicator size="small" color="#FFFFFF" />
               ) : (
-                <>
-                  <MaterialIcons name="chat" size={22} color="#FFFFFF" />
-                  <View style={styles.btnTextWrap}>
-                    <Text style={styles.btnTitle}>Send via WhatsApp</Text>
-                    <Text style={styles.btnSub}>Opens WhatsApp with pre-filled message</Text>
-                  </View>
-                  <MaterialIcons name="chevron-right" size={20} color="rgba(255,255,255,0.6)" />
-                </>
+                <MaterialIcons name="chat" size={20} color="#FFFFFF" />
               )}
-            </LinearGradient>
+              <Text style={styles.actionBtnText}>WhatsApp</Text>
+            </Pressable>
+          </View>
+
+          <Pressable style={styles.skipBtn} onPress={() => onDone('skip')}>
+            <Text style={styles.skipText}>Skip for now</Text>
           </Pressable>
-        </Animated.View>
+        </View>
       </View>
     </Modal>
   );
@@ -187,128 +147,125 @@ export function NotificationChoice({ visible, payload, onDone }: NotificationCho
 const styles = StyleSheet.create({
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    zIndex: 0,
-  },
-  backdropFade: {
-    ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.55)',
   },
-  center: {
+  centered: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: Spacing.xl,
-    zIndex: 1,
-  },
-  card: {
-    backgroundColor: Colors.background,
-    borderRadius: Radius.xxl,
     padding: Spacing.lg,
+  },
+  sheet: {
     width: '100%',
-    maxWidth: 380,
-    ...Shadow.xl,
-  },
-  iconWrap: {
-    alignSelf: 'center',
-    marginBottom: Spacing.md,
-  },
-  iconGradient: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...Shadow.md,
-  },
-  title: {
-    fontSize: FontSize.lg,
-    fontWeight: FontWeight.bold,
-    color: Colors.text,
-    textAlign: 'center',
-    marginBottom: Spacing.xs,
-  },
-  subtitle: {
-    fontSize: FontSize.sm,
-    color: Colors.textSecondary,
-    textAlign: 'center',
-    marginBottom: Spacing.md,
-  },
-  shopHighlight: {
-    fontWeight: FontWeight.bold,
-    color: Colors.primary,
-  },
-  infoCard: {
+    maxWidth: 360,
     backgroundColor: Colors.surface,
-    borderRadius: Radius.md,
-    padding: Spacing.md,
-    marginBottom: Spacing.md,
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
+    borderRadius: Radius.xl,
+    padding: Spacing.lg,
+    ...Shadow.lg,
   },
-  infoRow: {
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.sm,
-    paddingVertical: 4,
+    marginBottom: Spacing.md,
   },
-  infoDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+  headerIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  infoLabel: {
-    flex: 1,
-    fontSize: FontSize.sm,
-    color: Colors.textSecondary,
-  },
-  infoValue: {
-    fontSize: FontSize.sm,
+  headerTitle: {
+    fontSize: FontSize.md,
     fontWeight: FontWeight.bold,
     color: Colors.text,
   },
-  infoDivider: {
-    height: 1,
-    backgroundColor: Colors.borderLight,
-    marginVertical: 4,
+  headerSub: {
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    marginTop: 1,
   },
-  mandatoryNote: {
-    fontSize: FontSize.xs,
-    color: Colors.danger,
-    textAlign: 'center',
+  summary: {
+    backgroundColor: Colors.background,
+    borderRadius: Radius.md,
+    padding: Spacing.md,
+    gap: Spacing.xs,
     marginBottom: Spacing.md,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  summaryTotal: {
+    marginTop: Spacing.xs,
+    paddingTop: Spacing.xs,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  summaryLabel: {
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
     fontWeight: FontWeight.medium,
   },
-  btnSms: {
-    borderRadius: Radius.md,
+  summaryTotalLabel: {
+    fontSize: FontSize.sm,
+    color: Colors.text,
+    fontWeight: FontWeight.bold,
+  },
+  summaryValue: {
+    fontSize: FontSize.sm,
+    color: Colors.text,
+    fontWeight: FontWeight.semibold,
+  },
+  summaryTotalValue: {
+    fontSize: FontSize.base,
+    color: Colors.danger,
+    fontWeight: FontWeight.bold,
+  },
+  question: {
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: Spacing.md,
+  },
+  actions: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
     marginBottom: Spacing.sm,
-    overflow: 'hidden',
   },
-  btnWhatsapp: {
-    borderRadius: Radius.md,
-    overflow: 'hidden',
-  },
-  btnGradient: {
+  actionBtn: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: Spacing.md,
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 13,
+    borderRadius: Radius.md,
   },
-  btnPressed: {
-    opacity: 0.8,
+  smsBtn: {
+    backgroundColor: Colors.blue,
   },
-  btnTextWrap: {
-    flex: 1,
-    marginLeft: Spacing.sm,
+  waBtn: {
+    backgroundColor: '#22C55E',
   },
-  btnTitle: {
-    fontSize: FontSize.base,
+  disabled: {
+    opacity: 0.5,
+  },
+  actionBtnText: {
+    fontSize: FontSize.sm,
     fontWeight: FontWeight.bold,
     color: '#FFFFFF',
   },
-  btnSub: {
-    fontSize: FontSize.xs,
-    color: 'rgba(255,255,255,0.8)',
-    marginTop: 1,
+  skipBtn: {
+    alignItems: 'center',
+    paddingVertical: Spacing.sm,
+  },
+  skipText: {
+    fontSize: FontSize.sm,
+    color: Colors.textMuted,
+    fontWeight: FontWeight.medium,
   },
 });
