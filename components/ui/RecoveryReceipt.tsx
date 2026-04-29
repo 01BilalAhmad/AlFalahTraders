@@ -89,6 +89,17 @@ export function RecoveryReceipt({
           dialogTitle: `Share Receipt to ${shopName}`,
           UTI: 'public.png',
         });
+
+        // After sharing image, also send text message to shopkeeper on WhatsApp
+        // This ensures the shopkeeper receives BOTH image AND text
+        if (shopPhone) {
+          try {
+            const textMessage = buildReceiptText();
+            await openWhatsAppWithText(shopPhone, textMessage);
+          } catch (textErr) {
+            console.warn('[RecoveryReceipt] Could not send text after image share:', textErr);
+          }
+        }
       } else {
         throw new Error('Sharing not available');
       }
@@ -103,19 +114,10 @@ export function RecoveryReceipt({
           {
             text: 'WhatsApp Text Bhejo',
             onPress: () => {
+              const msg = encodeURIComponent(buildReceiptText());
               let phone = shopPhone.trim().replace(/[^0-9]/g, '');
               if (phone.startsWith('0')) phone = phone.substring(1);
               if (!phone.startsWith('92')) phone = '92' + phone;
-              const msg = encodeURIComponent(
-                `Al FALAH Credit System - Payment Receipt\n\n` +
-                `Shop: ${shopName}\n` +
-                `Date: ${today}\n\n` +
-                `Opening Balance: ${formatPKR(openingBalance)}\n` +
-                `Recovery Received: ${formatPKR(recoveryAmount)}\n` +
-                `Remaining Balance: ${formatPKR(remainingBalance)}\n\n` +
-                `Thank you for your payment!\n` +
-                `Al FALAH Credit System`
-              );
               Linking.openURL(`https://wa.me/${phone}?text=${msg}`);
             },
           },
@@ -125,6 +127,46 @@ export function RecoveryReceipt({
     } finally {
       setIsCapturing(false);
     }
+  };
+
+  /** Build receipt text message */
+  const buildReceiptText = (): string => {
+    return `Al FALAH Credit System - Payment Receipt\n\n`
+      + `Shop: ${shopName}\n`
+      + `Date: ${today}\n\n`
+      + `Opening Balance: ${formatPKR(openingBalance)}\n`
+      + `Recovery Received: ${formatPKR(recoveryAmount)}\n`
+      + `Remaining Balance: ${formatPKR(remainingBalance)}\n\n`
+      + `Thank you for your payment!\n`
+      + `Al FALAH Credit System`;
+  };
+
+  /** Open WhatsApp chat with text message to a phone number */
+  const openWhatsAppWithText = async (phone: string, message: string): Promise<boolean> => {
+    if (!phone || phone.trim().length === 0) return false;
+
+    let formattedPhone = phone.trim().replace(/[^0-9]/g, '');
+    if (formattedPhone.startsWith('0')) {
+      formattedPhone = formattedPhone.substring(1);
+    }
+    if (!formattedPhone.startsWith('92')) {
+      formattedPhone = '92' + formattedPhone;
+    }
+    formattedPhone = formattedPhone.replace(/[^0-9]/g, '');
+
+    const encodedMessage = encodeURIComponent(message);
+    const url = `https://wa.me/${formattedPhone}?text=${encodedMessage}`;
+
+    try {
+      const canOpen = await Linking.canOpenURL(url);
+      if (canOpen) {
+        await Linking.openURL(url);
+        return true;
+      }
+    } catch (e) {
+      console.warn('[RecoveryReceipt] Could not open WhatsApp with text:', e);
+    }
+    return false;
   };
 
   if (!visible) return null;

@@ -17,7 +17,7 @@ import { captureRef } from '@/utils/captureRef';
 import * as Sharing from 'expo-sharing';
 import * as Linking from 'expo-linking';
 import { Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
-import { getTodayLabel } from '@/utils/format';
+import { getTodayLabel, formatPKR } from '@/utils/format';
 
 
 interface DailyReportProps {
@@ -30,12 +30,6 @@ interface DailyReportProps {
   whatsappSent: number;
   pendingMessages: number;
   orderbookerName: string;
-}
-
-function formatAmount(amount: number): string {
-  if (amount >= 1000000) return `Rs.${(amount / 1000000).toFixed(1)}M`;
-  if (amount >= 1000) return `Rs.${(amount / 1000).toFixed(1)}K`;
-  return `Rs.${amount.toLocaleString()}`;
 }
 
 export function DailyReportCard({
@@ -64,7 +58,7 @@ export function DailyReportCard({
       `👤 ${orderbookerName}`,
       ``,
       `🏪 Shops: ${shopsVisited}/${totalShops} visited (${visitPct}%)`,
-      `💰 Recovery: ${formatAmount(totalRecovery)}`,
+      `💰 Recovery: ${formatPKR(totalRecovery)}`,
       `📩 SMS: ${smsSent} | WhatsApp: ${whatsappSent}`,
       pendingMessages > 0 ? `⚠️ ${pendingMessages} pending` : '',
       ``,
@@ -214,7 +208,7 @@ export function DailyReportCard({
                 </View>
                 <View style={styles.recoveryTextWrap}>
                   <Text style={styles.recoveryLabel}>TOTAL RECOVERY</Text>
-                  <Text style={styles.recoveryAmount}>{formatAmount(totalRecovery)}</Text>
+                  <Text style={styles.recoveryAmount}>{formatPKR(totalRecovery)}</Text>
                 </View>
               </View>
 

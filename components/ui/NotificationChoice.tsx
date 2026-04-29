@@ -79,6 +79,9 @@ export function NotificationChoice({ visible, payload, onDone }: NotificationCho
     if (!payload) return;
     setSending(true);
     try {
+      // Build text message for shopkeeper
+      const textMessage = buildRecoveryText(payload);
+
       // First try to capture receipt as image and share via WhatsApp
       if (receiptRef.current) {
         try {
@@ -99,6 +102,15 @@ export function NotificationChoice({ visible, payload, onDone }: NotificationCho
                 dialogTitle: `Share Receipt to ${payload.shopName}`,
                 UTI: 'public.png',
               });
+
+              // After sharing image, also send text message to shopkeeper on WhatsApp
+              // This ensures the shopkeeper receives BOTH image AND text
+              try {
+                await openWhatsAppWithText(payload.shopPhone, textMessage);
+              } catch (textErr) {
+                console.warn('[NotificationChoice] Could not send text after image share:', textErr);
+              }
+
               onDone('whatsapp');
               setSending(false);
               return;
@@ -109,13 +121,54 @@ export function NotificationChoice({ visible, payload, onDone }: NotificationCho
         }
       }
 
-      // Fallback: Send text message via WhatsApp deep link
+      // Fallback: Send text message via WhatsApp deep link (with image failed)
       await sendRecoveryWhatsapp(payload);
     } catch (err) {
       console.error('[NotificationChoice] WhatsApp error:', err);
     }
     setSending(false);
     onDone('whatsapp');
+  };
+
+  /** Build recovery text message */
+  const buildRecoveryText = (p: NotificationPayload): string => {
+    return `Al FALAH Credit System - Recovery Update\n\n`
+      + `Dear ${p.shopName},\n\n`
+      + `Your account has been updated:\n\n`
+      + `Opening Balance: ${formatPKR(p.openingBalance)}\n`
+      + `Recovery Received: ${formatPKR(p.recoveryAmount)}\n`
+      + `Remaining Balance: ${formatPKR(p.remainingBalance)}\n\n`
+      + `Date: ${today}\n\n`
+      + `Thank you for your payment!\n`
+      + `Al FALAH Credit System`;
+  };
+
+  /** Open WhatsApp chat with text message to a phone number */
+  const openWhatsAppWithText = async (phone: string, message: string): Promise<boolean> => {
+    if (!phone || phone.trim().length === 0) return false;
+
+    let formattedPhone = phone.trim().replace(/[^0-9]/g, '');
+    if (formattedPhone.startsWith('0')) {
+      formattedPhone = formattedPhone.substring(1);
+    }
+    if (!formattedPhone.startsWith('92')) {
+      formattedPhone = '92' + formattedPhone;
+    }
+    formattedPhone = formattedPhone.replace(/[^0-9]/g, '');
+
+    const encodedMessage = encodeURIComponent(message);
+    const url = `https://wa.me/${formattedPhone}?text=${encodedMessage}`;
+
+    try {
+      const canOpen = await Linking.canOpenURL(url);
+      if (canOpen) {
+        await Linking.openURL(url);
+        return true;
+      }
+    } catch (e) {
+      console.warn('[NotificationChoice] Could not open WhatsApp with text:', e);
+    }
+    return false;
   };
 
   if (!payload) return null;
@@ -316,11 +369,11 @@ const styles = StyleSheet.create({
   },
 
   // Hidden receipt for image capture
+  // NOTE: opacity: 0 removed — it causes captureRef to capture blank images on Android
   hiddenReceipt: {
     position: 'absolute',
     left: -9999,
     top: -9999,
-    opacity: 0,
   },
   receiptCard: {
     width: 340,

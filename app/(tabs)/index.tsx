@@ -336,11 +336,7 @@ export default function TodayRouteScreen() {
                   <View style={styles.pillDivider} />
                   <View style={styles.pill}>
                     <Text style={styles.pillValue}>
-                      {totalOutstanding >= 1000000
-                        ? `${(totalOutstanding / 1000000).toFixed(1)}M`
-                        : totalOutstanding >= 1000
-                        ? `${(totalOutstanding / 1000).toFixed(0)}K`
-                        : String(totalOutstanding)}
+                      {formatPKR(totalOutstanding)}
                     </Text>
                     <Text style={styles.pillLabel}>Outstanding</Text>
                   </View>

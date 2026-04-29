@@ -9,6 +9,7 @@ import {
   FlatList,
   Alert,
   Animated,
+  Linking,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { captureRef } from '@/utils/captureRef';
@@ -85,6 +86,9 @@ export function PendingMessagesSheet({
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setSendingId(item.id);
     try {
+      // Build text message for shopkeeper
+      const textMessage = buildPendingRecoveryText(item);
+
       // Try to capture receipt as image first
       const receiptView = receiptRefs.current[item.id];
       if (receiptView) {
@@ -105,6 +109,15 @@ export function PendingMessagesSheet({
                 dialogTitle: `Share Receipt to ${item.shopName}`,
                 UTI: 'public.png',
               });
+
+              // After sharing image, also send text message to shopkeeper on WhatsApp
+              // This ensures the shopkeeper receives BOTH image AND text
+              try {
+                await openWhatsAppWithText(item.shopPhone, textMessage);
+              } catch (textErr) {
+                console.warn('[PendingMessages] Could not send text after image share:', textErr);
+              }
+
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
               onSendWhatsapp(item.id);
               setSendingId(null);
@@ -130,6 +143,47 @@ export function PendingMessagesSheet({
       console.error('[PendingMessages] WhatsApp error:', err);
     }
     setSendingId(null);
+  };
+
+  /** Build recovery text message for pending notification */
+  const buildPendingRecoveryText = (item: PendingNotification): string => {
+    return `Al FALAH Credit System - Recovery Update\n\n`
+      + `Dear ${item.shopName},\n\n`
+      + `Your account has been updated:\n\n`
+      + `Opening Balance: ${formatPKR(item.openingBalance)}\n`
+      + `Recovery Received: ${formatPKR(item.recoveryAmount)}\n`
+      + `Remaining Balance: ${formatPKR(item.remainingBalance)}\n\n`
+      + `Date: ${today}\n\n`
+      + `Thank you for your payment!\n`
+      + `Al FALAH Credit System`;
+  };
+
+  /** Open WhatsApp chat with text message to a phone number */
+  const openWhatsAppWithText = async (phone: string, message: string): Promise<boolean> => {
+    if (!phone || phone.trim().length === 0) return false;
+
+    let formattedPhone = phone.trim().replace(/[^0-9]/g, '');
+    if (formattedPhone.startsWith('0')) {
+      formattedPhone = formattedPhone.substring(1);
+    }
+    if (!formattedPhone.startsWith('92')) {
+      formattedPhone = '92' + formattedPhone;
+    }
+    formattedPhone = formattedPhone.replace(/[^0-9]/g, '');
+
+    const encodedMessage = encodeURIComponent(message);
+    const url = `https://wa.me/${formattedPhone}?text=${encodedMessage}`;
+
+    try {
+      const canOpen = await Linking.canOpenURL(url);
+      if (canOpen) {
+        await Linking.openURL(url);
+        return true;
+      }
+    } catch (e) {
+      console.warn('[PendingMessages] Could not open WhatsApp with text:', e);
+    }
+    return false;
   };
 
   const today = new Date().toLocaleDateString('en-PK', {
@@ -570,11 +624,11 @@ const styles = StyleSheet.create({
   },
 
   // Hidden receipt for image capture
+  // NOTE: opacity: 0 removed — it causes captureRef to capture blank images on Android
   hiddenReceipt: {
     position: 'absolute',
     left: -9999,
     top: -9999,
-    opacity: 0,
   },
   receiptCard: {
     width: 320,
