@@ -206,4 +206,16 @@ export const ApiService = {
     request<{ success: boolean }>(`/api/transactions/${transactionId}`, {
       method: 'DELETE',
     }),
+
+  recordVisit: (shopId: string, payload: {
+    orderbookerId: string;
+    gpsLat?: number;
+    gpsLng?: number;
+    gpsAddress?: string;
+    inRange?: boolean;
+  }) =>
+    request<any>(`/api/shops/${shopId}/visits`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
 };

@@ -107,6 +107,20 @@ export async function syncOfflineRecoveries(): Promise<SyncResult> {
           gpsLng: item.gpsLng,
           gpsAddress: item.gpsAddress,
         });
+        // Also create a ShopVisit record so admin map shows the location
+        if (item.gpsLat && item.gpsLng) {
+          try {
+            await ApiService.recordVisit(item.shopId, {
+              orderbookerId: item.createdBy,
+              gpsLat: item.gpsLat,
+              gpsLng: item.gpsLng,
+              gpsAddress: item.gpsAddress,
+              inRange: true,
+            });
+          } catch (e) {
+            console.warn('[OfflineSync] Failed to record GPS visit:', e);
+          }
+        }
         synced.push(item.localId);
       } catch (err: any) {
         // If the error is a business rule error (e.g. amount > balance), remove it too

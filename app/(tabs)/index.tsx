@@ -193,6 +193,20 @@ export default function TodayRouteScreen() {
         });
         setVisitedShopIds((prev) => new Set([...prev, shopId]));
         setTodayRecovery((prev) => prev + payload.amount);
+        // Also create a ShopVisit record so admin map can show the location
+        if (payload.markGpsVisit && payload.gpsLat && payload.gpsLng) {
+          try {
+            await ApiService.recordVisit(shopId, {
+              orderbookerId: user.id,
+              gpsLat: payload.gpsLat,
+              gpsLng: payload.gpsLng,
+              gpsAddress: payload.gpsAddress,
+              inRange: !payload.outOfRange,
+            });
+          } catch (e) {
+            console.warn('Failed to record GPS visit from recovery:', e);
+          }
+        }
         // Feature 12: Track last recovery for undo
         setLastRecoveryInfo({ shopId, amount: payload.amount, isOffline: false, transactionId: result.id });
         // Feature 13: Update last recovery date
@@ -256,8 +270,22 @@ export default function TodayRouteScreen() {
     }
   };
 
-  const handleGpsVisitMarked = (shopId: string) => {
+  const handleGpsVisitMarked = async (shopId: string, gpsLat: number, gpsLng: number, address: string) => {
     setVisitedShopIds((prev) => new Set([...prev, shopId]));
+    // Create a ShopVisit record on the server so admin map can show the location
+    if (user && isOnline) {
+      try {
+        await ApiService.recordVisit(shopId, {
+          orderbookerId: user.id,
+          gpsLat,
+          gpsLng,
+          gpsAddress: address,
+          inRange: true,
+        });
+      } catch (e) {
+        console.warn('Failed to record GPS visit on server:', e);
+      }
+    }
   };
 
   // Feature 12: Undo last recovery
