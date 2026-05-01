@@ -17,6 +17,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/hooks/useAuth';
 import { useShops } from '@/hooks/useShops';
+import { useLock } from '@/hooks/useLock';
+import { SecureStorageService } from '@/services/secureStorage';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
 
 export default function LoginScreen() {
@@ -24,6 +26,7 @@ export default function LoginScreen() {
   const router = useRouter();
   const { login } = useAuth();
   const { triggerFullSync } = useShops();
+  const { setNeedsPinSetup, resetIdleTimer } = useLock();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [syncingData, setSyncingData] = useState(false);
@@ -49,6 +52,15 @@ export default function LoginScreen() {
         // Non-critical
       } finally {
         setSyncingData(false);
+      }
+      // After successful login + sync, check if PIN is set
+      const hasPin = await SecureStorageService.hasPin();
+      if (!hasPin) {
+        // First-time login — trigger PIN setup
+        setNeedsPinSetup(true);
+        resetIdleTimer();
+      } else {
+        resetIdleTimer();
       }
       router.replace('/(tabs)');
     } catch (e: any) {

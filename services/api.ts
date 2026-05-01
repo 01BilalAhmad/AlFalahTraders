@@ -26,6 +26,8 @@ export interface Shop {
   status: string;
   createdAt: string;
   updatedAt: string;
+  lat?: number;
+  lng?: number;
   orderbooker?: { id: string; name: string };
 }
 
@@ -143,6 +145,7 @@ export const ApiService = {
     gpsLat?: number;
     gpsLng?: number;
     gpsAddress?: string;
+    outOfRange?: boolean;
   }) =>
     request<Transaction>('/api/transactions', {
       method: 'POST',
@@ -197,5 +200,10 @@ export const ApiService = {
     request<{ synced: number; failed: number; results: any[] }>('/api/mobile/sync', {
       method: 'POST',
       body: JSON.stringify({ transactions }),
+    }),
+
+  deleteTransaction: (transactionId: string) =>
+    request<{ success: boolean }>(`/api/transactions/${transactionId}`, {
+      method: 'DELETE',
     }),
 };

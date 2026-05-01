@@ -25,12 +25,17 @@ import { GpsVisitBottomSheet } from '@/components/ui/GpsVisitBottomSheet';
 import { ShopDetailModal } from '@/components/ui/ShopDetailModal';
 import { SuccessOverlay } from '@/components/ui/SuccessOverlay';
 import { OfflineBanner } from '@/components/ui/OfflineBanner';
+import { PendingCreditAlert } from '@/components/ui/PendingCreditAlert';
+import { VisitStreakCounter } from '@/components/ui/VisitStreakCounter';
 import { PerformanceChart } from '@/components/ui/PerformanceChart';
 import { RecoveryAnalysisChart } from '@/components/ui/RecoveryAnalysisChart';
 import { NotificationChoice, NotificationMethod } from '@/components/ui/NotificationChoice';
 import { DailyReportCard } from '@/components/ui/DailyReportCard';
 import { PendingMessagesSheet } from '@/components/ui/PendingMessagesSheet';
-import { StorageService, PendingNotification } from '@/services/storage';
+import { DailyTargetProgress } from '@/components/ui/DailyTargetProgress';
+import { StorageService, PendingNotification, OfflineRecovery } from '@/services/storage';
+import { RecoveryReminder } from '@/components/ui/RecoveryReminder';
+import { AppTour } from '@/components/ui/AppTour';
 
 type ChartView = 'trend' | 'analysis' | 'none';
 
@@ -44,6 +49,7 @@ export default function TodayRouteScreen() {
   const { user } = useAuth();
   const {
     todayShops,
+    allShops,
     isLoadingToday,
     offlineQueueCount,
     isOnline,
@@ -83,9 +89,30 @@ export default function TodayRouteScreen() {
   const [showPending, setShowPending] = useState(false);
   const [pendingNotifications, setPendingNotifications] = useState<PendingNotification[]>([]);
 
+  // Feature 12: Undo tracking
+  const [lastRecoveryInfo, setLastRecoveryInfo] = useState<{
+    shopId: string;
+    amount: number;
+    isOffline: boolean;
+    transactionId?: string;
+    localId?: string;
+  } | null>(null);
+
+  // Feature 14: Tour state
+  const [showTour, setShowTour] = useState(false);
+
   const todayDay = getTodayDayName();
   const isFriday = todayDay === 'friday';
   const allRoutesEnabled = !!user?.allRoutesEnabled;
+
+  // Feature 14: Check if tour has been completed on mount
+  useEffect(() => {
+    if (user) {
+      StorageService.isTourCompleted().then((completed) => {
+        if (!completed) setShowTour(true);
+      });
+    }
+  }, [user]);
 
   useEffect(() => {
     if (user) {
@@ -143,6 +170,7 @@ export default function TodayRouteScreen() {
     gpsLng?: number;
     gpsAddress?: string;
     markGpsVisit: boolean;
+    outOfRange?: boolean;
   }) => {
     if (!recoveryShop || !user) return;
     setIsSubmitting(true);
@@ -152,7 +180,7 @@ export default function TodayRouteScreen() {
     const openingBalance = recoveryShop.balance;
     try {
       if (isOnline) {
-        await ApiService.submitRecovery({
+        const result = await ApiService.submitRecovery({
           shopId,
           type: 'recovery',
           amount: payload.amount,
@@ -161,9 +189,14 @@ export default function TodayRouteScreen() {
           gpsLat: payload.gpsLat,
           gpsLng: payload.gpsLng,
           gpsAddress: payload.gpsAddress,
+          outOfRange: payload.outOfRange,
         });
         setVisitedShopIds((prev) => new Set([...prev, shopId]));
         setTodayRecovery((prev) => prev + payload.amount);
+        // Feature 12: Track last recovery for undo
+        setLastRecoveryInfo({ shopId, amount: payload.amount, isOffline: false, transactionId: result.id });
+        // Feature 13: Update last recovery date
+        StorageService.updateLastRecoveryDate(shopId, new Date().toISOString());
         setSuccessState({ visible: true, shopName, amount: payload.amount, isOffline: false });
 
         if (shopPhone) {
@@ -193,8 +226,9 @@ export default function TodayRouteScreen() {
           });
         }
       } else {
+        const localId = `local_${Date.now()}`;
         await addToOfflineQueue({
-          localId: `local_${Date.now()}`,
+          localId,
           shopId,
           shopName,
           amount: payload.amount,
@@ -208,6 +242,10 @@ export default function TodayRouteScreen() {
         if (payload.markGpsVisit) {
           setVisitedShopIds((prev) => new Set([...prev, shopId]));
         }
+        // Feature 12: Track last offline recovery for undo
+        setLastRecoveryInfo({ shopId, amount: payload.amount, isOffline: true, localId });
+        // Feature 13: Update last recovery date
+        StorageService.updateLastRecoveryDate(shopId, new Date().toISOString());
         setSuccessState({ visible: true, shopName, amount: payload.amount, isOffline: true });
       }
       setRecoveryShop(null);
@@ -221,6 +259,60 @@ export default function TodayRouteScreen() {
   const handleGpsVisitMarked = (shopId: string) => {
     setVisitedShopIds((prev) => new Set([...prev, shopId]));
   };
+
+  // Feature 12: Undo last recovery
+  const handleUndoRecovery = useCallback(async () => {
+    if (!lastRecoveryInfo) return;
+    const { shopId, amount, isOffline, transactionId, localId } = lastRecoveryInfo;
+
+    try {
+      // Reverse the local state
+      setTodayRecovery((prev) => Math.max(0, prev - amount));
+      setVisitedShopIds((prev) => {
+        const next = new Set(prev);
+        next.delete(shopId);
+        return next;
+      });
+
+      if (isOffline && localId) {
+        // Remove from offline queue
+        await StorageService.removeFromOfflineQueue([localId]);
+      } else if (!isOffline && transactionId) {
+        // Delete the online transaction via API
+        try {
+          await ApiService.deleteTransaction(transactionId);
+        } catch {
+          // If API delete fails, still reverse local state
+          console.warn('[Undo] Failed to delete transaction on server');
+        }
+      }
+
+      // Feature 13: Remove last recovery date for this shop
+      await StorageService.removeLastRecoveryDate(shopId);
+
+      setLastRecoveryInfo(null);
+      setSuccessState((s) => ({ ...s, visible: false }));
+    } catch {
+      Alert.alert('Undo Failed', 'Could not reverse the recovery. Please try again.');
+    }
+  }, [lastRecoveryInfo]);
+
+  // Feature 14: Tour complete handler
+  const handleTourComplete = useCallback(async () => {
+    await StorageService.markTourCompleted();
+    setShowTour(false);
+  }, []);
+
+  // Feature 13: Handle reminder shop press
+  const handleReminderShopPress = useCallback((shopId: string) => {
+    const shop = todayShops.find((s) => s.id === shopId);
+    if (shop) {
+      setRecoveryShop(shop);
+    } else {
+      const allShop = allShops.find((s) => s.id === shopId);
+      if (allShop) setDetailShop(allShop);
+    }
+  }, [todayShops, allShops]);
 
   // ── Filtered shops (search) ──────────────────────────────────────────────
   const filteredShops = useMemo(() => {
@@ -299,6 +391,8 @@ export default function TodayRouteScreen() {
         onSync={handleSync}
       />
 
+      <PendingCreditAlert orderbookerId={user?.id} />
+
       {showFridayHoliday ? (
         <View style={styles.holidayContainer}>
           <LinearGradient colors={['#FEF3C7', '#FFFBEB']} style={styles.holidayGradient}>
@@ -343,6 +437,11 @@ export default function TodayRouteScreen() {
                     <Text style={styles.heroDate}>{getTodayLabel()}</Text>
                   </View>
                 </View>
+
+                {/* Visit Streak Counter */}
+                {user ? (
+                  <VisitStreakCounter orderbookerId={user.id} visitedCount={visitedCount} />
+                ) : null}
 
                 {/* Badges */}
                 <View style={styles.badgesRow}>
@@ -409,6 +508,10 @@ export default function TodayRouteScreen() {
                   </View>
                 </View>
               </LinearGradient>
+
+
+              {/* Daily Target Progress */}
+              <DailyTargetProgress todayRecovery={todayRecovery} />
 
               {/* Chart Toggle */}
               <View style={styles.chartToggleRow}>
@@ -491,6 +594,12 @@ export default function TodayRouteScreen() {
                   </View>
                 ) : null}
               </View>
+
+              {/* Feature 13: Recovery Reminder */}
+              <RecoveryReminder
+                shops={allShops.length > 0 ? allShops : todayShops}
+                onShopPress={handleReminderShopPress}
+              />
             </View>
           }
           ListEmptyComponent={
@@ -589,6 +698,11 @@ export default function TodayRouteScreen() {
                   </View>
                 </View>
 
+                {/* Visit Streak Counter */}
+                {user ? (
+                  <VisitStreakCounter orderbookerId={user.id} visitedCount={visitedCount} />
+                ) : null}
+
                 {/* Badges */}
                 <View style={styles.badgesRow}>
                   <View style={styles.heroDayBadge}>
@@ -654,6 +768,10 @@ export default function TodayRouteScreen() {
                   </View>
                 </View>
               </LinearGradient>
+
+
+              {/* Daily Target Progress */}
+              <DailyTargetProgress todayRecovery={todayRecovery} />
 
               {/* Chart Toggle */}
               <View style={styles.chartToggleRow}>
@@ -737,6 +855,12 @@ export default function TodayRouteScreen() {
                   </View>
                 ) : null}
               </View>
+
+              {/* Feature 13: Recovery Reminder */}
+              <RecoveryReminder
+                shops={allShops.length > 0 ? allShops : todayShops}
+                onShopPress={handleReminderShopPress}
+              />
             </View>
           }
           ListEmptyComponent={
@@ -803,6 +927,7 @@ export default function TodayRouteScreen() {
         amount={successState.amount}
         isOffline={successState.isOffline}
         onDismiss={() => setSuccessState((s) => ({ ...s, visible: false }))}
+        onUndo={handleUndoRecovery}
       />
       <NotificationChoice
         visible={notifChoice.visible}
@@ -852,6 +977,12 @@ export default function TodayRouteScreen() {
         }}
         onClose={() => setShowPending(false)}
         onRefresh={loadPendingNotifications}
+      />
+
+      {/* Feature 14: App Tour */}
+      <AppTour
+        visible={showTour}
+        onComplete={handleTourComplete}
       />
     </View>
   );

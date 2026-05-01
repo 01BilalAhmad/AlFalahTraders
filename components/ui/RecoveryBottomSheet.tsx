@@ -24,6 +24,7 @@ import * as Location from 'expo-location';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
 import { Shop } from '@/services/api';
 import { formatPKR } from '@/utils/format';
+import { getDistanceMeters } from '@/utils/distance';
 import { QUICK_AMOUNTS, MIN_RECOVERY, MAX_RECOVERY } from '@/constants/config';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
@@ -39,6 +40,7 @@ interface RecoveryBottomSheetProps {
     gpsLng?: number;
     gpsAddress?: string;
     markGpsVisit: boolean;
+    outOfRange?: boolean;
   }) => Promise<void>;
   isSubmitting: boolean;
 }
@@ -307,6 +309,27 @@ export function RecoveryBottomSheet({
       return;
     }
 
+    // Shop Visit Verification: Check if order booker is within 100m of the shop
+    let outOfRange = false;
+    if (shop && shop.lat != null && shop.lng != null && gpsLat != null && gpsLng != null) {
+      const distance = getDistanceMeters(gpsLat, gpsLng, shop.lat, shop.lng);
+      if (distance > 100) {
+        const confirmed = await new Promise<boolean>((resolve) => {
+          Alert.alert(
+            'Not Near Shop',
+            `You are ${Math.round(distance)}m away from ${shop.name}. Confirm anyway?`,
+            [
+              { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+              { text: 'Submit', style: 'default', onPress: () => resolve(true) },
+            ],
+            { cancelable: false }
+          );
+        });
+        if (!confirmed) return;
+        outOfRange = true;
+      }
+    }
+
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     await onSubmit({
       amount: numAmount,
@@ -315,6 +338,7 @@ export function RecoveryBottomSheet({
       gpsLng: markGpsVisit ? gpsLng : undefined,
       gpsAddress: markGpsVisit ? gpsAddress : undefined,
       markGpsVisit,
+      outOfRange: outOfRange || undefined,
     });
     setShowSuccess(true);
     setTimeout(() => {

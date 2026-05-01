@@ -168,6 +168,13 @@ export function ShopsProvider({ children }: { children: ReactNode }) {
         setIsOnlineState(netStatus.isOnline);
         wasOnlineRef.current = netStatus.isOnline;
 
+        // Feature 11: Clean expired offline entries when app comes to foreground
+        const expiredCount = await StorageService.cleanExpiredOfflineQueue();
+        if (expiredCount > 0) {
+          console.log(`[ShopsContext] Cleaned ${expiredCount} expired offline recoveries on foreground`);
+          await refreshOfflineQueue();
+        }
+
         if (netStatus.isOnline) {
           // Check if there's a pending queue before triggering sync
           const queue = await StorageService.getOfflineQueue();

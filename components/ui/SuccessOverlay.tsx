@@ -1,6 +1,6 @@
 // Powered by OnSpace.AI
-import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Modal, Animated } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, StyleSheet, Modal, Animated, Pressable } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Colors, Spacing, Radius, FontSize, FontWeight } from '@/constants/theme';
 import { formatPKR } from '@/utils/format';
@@ -11,27 +11,65 @@ interface SuccessOverlayProps {
   amount: number;
   isOffline?: boolean;
   onDismiss: () => void;
+  onUndo?: () => void;
 }
 
-export function SuccessOverlay({ visible, shopName, amount, isOffline, onDismiss }: SuccessOverlayProps) {
+const UNDO_WINDOW_MS = 5000;
+
+export function SuccessOverlay({ visible, shopName, amount, isOffline, onDismiss, onUndo }: SuccessOverlayProps) {
   const scale = useRef(new Animated.Value(0.5)).current;
   const opacity = useRef(new Animated.Value(0)).current;
+  const undoOpacity = useRef(new Animated.Value(1)).current;
+  const [showUndo, setShowUndo] = useState(false);
+  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (visible) {
+      // Reset undo state
+      setShowUndo(!!onUndo);
+      undoOpacity.setValue(1);
+
       Animated.parallel([
         Animated.spring(scale, { toValue: 1, useNativeDriver: true, tension: 100, friction: 8 }),
         Animated.timing(opacity, { toValue: 1, duration: 200, useNativeDriver: true }),
       ]).start();
-      const t = setTimeout(() => {
+
+      // Auto-hide undo button after UNDO_WINDOW_MS
+      if (onUndo) {
+        undoTimerRef.current = setTimeout(() => {
+          Animated.timing(undoOpacity, {
+            toValue: 0,
+            duration: 400,
+            useNativeDriver: true,
+          }).start(() => setShowUndo(false));
+        }, UNDO_WINDOW_MS);
+      }
+
+      // Auto-dismiss overlay after 3.5s (give undo 5s window, but overlay fades a bit later)
+      dismissTimerRef.current = setTimeout(() => {
         Animated.timing(opacity, { toValue: 0, duration: 300, useNativeDriver: true }).start(onDismiss);
-      }, 2500);
-      return () => clearTimeout(t);
+      }, 5500);
+
+      return () => {
+        if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+        if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
+      };
     } else {
       scale.setValue(0.5);
       opacity.setValue(0);
+      setShowUndo(false);
     }
   }, [visible]);
+
+  const handleUndo = () => {
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
+    // Fade out quickly then call onUndo
+    Animated.timing(opacity, { toValue: 0, duration: 200, useNativeDriver: true }).start(() => {
+      onUndo?.();
+    });
+  };
 
   return (
     <Modal visible={visible} transparent animationType="none">
@@ -51,6 +89,16 @@ export function SuccessOverlay({ visible, shopName, amount, isOffline, onDismiss
               {isOffline ? 'Saved offline — will sync when online' : 'Pending admin approval'}
             </Text>
           </View>
+
+          {/* Undo Button */}
+          {showUndo && onUndo ? (
+            <Animated.View style={{ opacity: undoOpacity }}>
+              <Pressable style={styles.undoButton} onPress={handleUndo}>
+                <MaterialIcons name="undo" size={16} color={Colors.danger} />
+                <Text style={styles.undoText}>Undo</Text>
+              </Pressable>
+            </Animated.View>
+          ) : null}
         </Animated.View>
       </Animated.View>
     </Modal>
@@ -114,5 +162,21 @@ const styles = StyleSheet.create({
     color: Colors.secondary,
     fontWeight: FontWeight.semibold,
     textAlign: 'center',
+  },
+  undoButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.xs,
+    marginTop: Spacing.md,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: Radius.full,
+    backgroundColor: Colors.dangerLight,
+  },
+  undoText: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.semibold,
+    color: Colors.danger,
   },
 });

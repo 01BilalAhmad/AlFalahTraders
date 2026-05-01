@@ -16,10 +16,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/hooks/useAuth';
 import { useShops } from '@/hooks/useShops';
+import { useLock } from '@/hooks/useLock';
 import { ApiService } from '@/services/api';
+import { SecureStorageService } from '@/services/secureStorage';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
 import { formatPKR, getTodayDateStr } from '@/utils/format';
 import { RecoveryAnalysisChart } from '@/components/ui/RecoveryAnalysisChart';
+import { RecoveryComparison } from '@/components/ui/RecoveryComparison';
+import { PerformanceRanking } from '@/components/ui/PerformanceRanking';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -114,6 +118,7 @@ export default function ProfileScreen() {
   const router = useRouter();
   const { user, logout } = useAuth();
   const { allShops } = useShops();
+  const { setNeedsPinSetup, lock } = useLock();
 
   const [loggingOut, setLoggingOut] = useState(false);
   const [todayRecovery, setTodayRecovery] = useState(0);
@@ -153,10 +158,25 @@ export default function ProfileScreen() {
           setLoggingOut(true);
           try {
             await logout();
+            await SecureStorageService.clearAll();
             router.replace('/login');
           } finally {
             setLoggingOut(false);
           }
+        },
+      },
+    ]);
+  };
+
+  const handleChangePin = () => {
+    Alert.alert('Change PIN', 'Do you want to change your PIN? You will need to set a new one.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Change PIN',
+        onPress: async () => {
+          await SecureStorageService.clearPin();
+          setNeedsPinSetup(true);
+          lock();
         },
       },
     ]);
@@ -251,6 +271,9 @@ export default function ProfileScreen() {
           />
         </View>
 
+        {/* Recovery Comparison: This vs Last Week */}
+        <RecoveryComparison userId={user.id} />
+
         {/* Recovery Analysis Chart */}
         <Pressable
           style={({ pressed }) => [styles.analysisToggle, pressed && { opacity: 0.8 }]}
@@ -273,6 +296,26 @@ export default function ProfileScreen() {
         </Pressable>
 
         {showAnalysis ? <RecoveryAnalysisChart userId={user.id} /> : null}
+
+        {/* Performance Ranking */}
+        <PerformanceRanking />
+
+        {/* Change PIN */}
+        <Pressable
+          style={({ pressed }) => [styles.changePinBtn, pressed && { opacity: 0.8 }]}
+          onPress={handleChangePin}
+        >
+          <View style={styles.changePinLeft}>
+            <View style={styles.changePinIcon}>
+              <MaterialIcons name="pin" size={18} color={Colors.primary} />
+            </View>
+            <View>
+              <Text style={styles.changePinTitle}>Change PIN</Text>
+              <Text style={styles.changePinSub}>Update your 4-digit security PIN</Text>
+            </View>
+          </View>
+          <MaterialIcons name="chevron-right" size={22} color={Colors.textMuted} />
+        </Pressable>
 
         {/* Logout */}
         <Pressable
@@ -438,4 +481,40 @@ const styles = StyleSheet.create({
     ...Shadow.sm,
   },
   logoutBtnText: { fontSize: FontSize.base, fontWeight: FontWeight.bold, color: Colors.textInverse },
+  changePinBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.md,
+    padding: Spacing.md,
+    marginHorizontal: Spacing.md,
+    marginTop: Spacing.sm,
+    ...Shadow.sm,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+  },
+  changePinLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  changePinIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: Colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  changePinTitle: {
+    fontSize: FontSize.base,
+    fontWeight: FontWeight.bold,
+    color: Colors.text,
+  },
+  changePinSub: {
+    fontSize: FontSize.xs,
+    color: Colors.textMuted,
+    marginTop: 1,
+  },
 });

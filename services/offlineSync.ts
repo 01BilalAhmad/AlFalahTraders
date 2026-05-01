@@ -80,6 +80,12 @@ export async function syncOfflineRecoveries(): Promise<SyncResult> {
   }
 
   try {
+    // Feature 11: Clean expired offline entries (>7 days old) before syncing
+    const expiredCount = await StorageService.cleanExpiredOfflineQueue();
+    if (expiredCount > 0) {
+      console.log(`[OfflineSync] Cleaned ${expiredCount} expired offline recoveries (>7 days old)`);
+    }
+
     const queue = await StorageService.getOfflineQueue();
     if (queue.length === 0) {
       return { synced: 0, failed: 0, failedItems: [] };

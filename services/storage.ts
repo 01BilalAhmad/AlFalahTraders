@@ -9,6 +9,11 @@ const KEYS = {
   OFFLINE_QUEUE: 'af_offline_queue',
   LAST_SYNC: 'af_last_sync',
   PENDING_NOTIFICATIONS: 'af_pending_notifications',
+  LAST_RECOVERY_DATES: 'af_last_recovery_dates',
+  TOUR_COMPLETED: 'af_tour_completed',
+  SHOP_NOTES: 'af_shop_notes',
+  DAILY_TARGETS: 'af_daily_targets',
+  VISIT_STREAKS: 'af_visit_streaks',
 };
 
 export interface PendingNotification {
@@ -35,6 +40,30 @@ export interface OfflineRecovery {
   gpsAddress?: string;
   createdBy: string;
   createdAt: string;
+}
+
+export interface ShopLastRecovery {
+  shopId: string;
+  lastRecoveryDate: string;
+}
+
+export interface ShopNote {
+  shopId: string;
+  note: string;
+  updatedAt: string;
+}
+
+export interface DailyTarget {
+  orderbookerId: string;
+  target: number;
+  month: string;
+}
+
+export interface VisitStreak {
+  orderbookerId: string;
+  currentStreak: number;
+  lastVisitDate: string;
+  longestStreak: number;
 }
 
 export const StorageService = {
@@ -134,6 +163,201 @@ export const StorageService = {
       await AsyncStorage.setItem(KEYS.PENDING_NOTIFICATIONS, JSON.stringify(filtered));
     } else {
       await AsyncStorage.setItem(KEYS.PENDING_NOTIFICATIONS, JSON.stringify([]));
+    }
+  },
+
+  // --- Offline Data Expiry (7 Day Auto-Clear) ---
+  cleanExpiredOfflineQueue: async (): Promise<number> => {
+    const raw = await AsyncStorage.getItem(KEYS.OFFLINE_QUEUE);
+    const queue: OfflineRecovery[] = raw ? JSON.parse(raw) : [];
+    const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+    const cutoff = Date.now() - SEVEN_DAYS_MS;
+    const before = queue.length;
+    const filtered = queue.filter((r) => {
+      const created = new Date(r.createdAt).getTime();
+      return created >= cutoff;
+    });
+    const removed = before - filtered.length;
+    if (removed > 0) {
+      await AsyncStorage.setItem(KEYS.OFFLINE_QUEUE, JSON.stringify(filtered));
+    }
+    return removed;
+  },
+
+  // --- Recurring Recovery Reminder (Last Recovery Dates) ---
+  updateLastRecoveryDate: async (shopId: string, date: string) => {
+    const raw = await AsyncStorage.getItem(KEYS.LAST_RECOVERY_DATES);
+    const list: ShopLastRecovery[] = raw ? JSON.parse(raw) : [];
+    const idx = list.findIndex((e) => e.shopId === shopId);
+    if (idx >= 0) {
+      list[idx].lastRecoveryDate = date;
+    } else {
+      list.push({ shopId, lastRecoveryDate: date });
+    }
+    await AsyncStorage.setItem(KEYS.LAST_RECOVERY_DATES, JSON.stringify(list));
+  },
+
+  getLastRecoveryDates: async (): Promise<ShopLastRecovery[]> => {
+    const raw = await AsyncStorage.getItem(KEYS.LAST_RECOVERY_DATES);
+    return raw ? JSON.parse(raw) : [];
+  },
+
+  getShopsNeedingRecovery: async (minDays: number): Promise<ShopLastRecovery[]> => {
+    const raw = await AsyncStorage.getItem(KEYS.LAST_RECOVERY_DATES);
+    const list: ShopLastRecovery[] = raw ? JSON.parse(raw) : [];
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - minDays);
+    const cutoffStr = cutoff.toISOString();
+    return list.filter((e) => e.lastRecoveryDate <= cutoffStr);
+  },
+
+  removeLastRecoveryDate: async (shopId: string) => {
+    const raw = await AsyncStorage.getItem(KEYS.LAST_RECOVERY_DATES);
+    const list: ShopLastRecovery[] = raw ? JSON.parse(raw) : [];
+    const filtered = list.filter((e) => e.shopId !== shopId);
+    await AsyncStorage.setItem(KEYS.LAST_RECOVERY_DATES, JSON.stringify(filtered));
+  },
+
+  // --- App Tour / First-Time Walkthrough ---
+  isTourCompleted: async (): Promise<boolean> => {
+    const raw = await AsyncStorage.getItem(KEYS.TOUR_COMPLETED);
+    return raw === 'true';
+  },
+
+  markTourCompleted: async () => {
+    await AsyncStorage.setItem(KEYS.TOUR_COMPLETED, 'true');
+  },
+
+  // --- Shop Notes / Remarks ---
+  saveShopNote: async (shopId: string, note: string) => {
+    const raw = await AsyncStorage.getItem(KEYS.SHOP_NOTES);
+    const notes: ShopNote[] = raw ? JSON.parse(raw) : [];
+    const existingIndex = notes.findIndex((n) => n.shopId === shopId);
+    const entry: ShopNote = { shopId, note, updatedAt: new Date().toISOString() };
+    if (existingIndex >= 0) {
+      notes[existingIndex] = entry;
+    } else {
+      notes.push(entry);
+    }
+    await AsyncStorage.setItem(KEYS.SHOP_NOTES, JSON.stringify(notes));
+  },
+
+  getShopNote: async (shopId: string): Promise<ShopNote | null> => {
+    const raw = await AsyncStorage.getItem(KEYS.SHOP_NOTES);
+    const notes: ShopNote[] = raw ? JSON.parse(raw) : [];
+    return notes.find((n) => n.shopId === shopId) || null;
+  },
+
+  getAllShopNotes: async (): Promise<ShopNote[]> => {
+    const raw = await AsyncStorage.getItem(KEYS.SHOP_NOTES);
+    return raw ? JSON.parse(raw) : [];
+  },
+
+  deleteShopNote: async (shopId: string) => {
+    const raw = await AsyncStorage.getItem(KEYS.SHOP_NOTES);
+    const notes: ShopNote[] = raw ? JSON.parse(raw) : [];
+    const filtered = notes.filter((n) => n.shopId !== shopId);
+    await AsyncStorage.setItem(KEYS.SHOP_NOTES, JSON.stringify(filtered));
+  },
+
+  // --- Daily Targets ---
+  saveDailyTarget: async (target: DailyTarget) => {
+    const raw = await AsyncStorage.getItem(KEYS.DAILY_TARGETS);
+    const targets: DailyTarget[] = raw ? JSON.parse(raw) : [];
+    const existingIndex = targets.findIndex(
+      (t) => t.orderbookerId === target.orderbookerId && t.month === target.month
+    );
+    if (existingIndex >= 0) {
+      targets[existingIndex] = target;
+    } else {
+      targets.push(target);
+    }
+    await AsyncStorage.setItem(KEYS.DAILY_TARGETS, JSON.stringify(targets));
+  },
+
+  getDailyTarget: async (orderbookerId: string, month: string): Promise<DailyTarget | null> => {
+    const raw = await AsyncStorage.getItem(KEYS.DAILY_TARGETS);
+    const targets: DailyTarget[] = raw ? JSON.parse(raw) : [];
+    return targets.find((t) => t.orderbookerId === orderbookerId && t.month === month) || null;
+  },
+
+  getDailyTargets: async (): Promise<DailyTarget[]> => {
+    const raw = await AsyncStorage.getItem(KEYS.DAILY_TARGETS);
+    return raw ? JSON.parse(raw) : [];
+  },
+
+  // --- Visit Streak Tracking ---
+  saveVisitStreak: async (streak: VisitStreak) => {
+    const raw = await AsyncStorage.getItem(KEYS.VISIT_STREAKS);
+    const streaks: VisitStreak[] = raw ? JSON.parse(raw) : [];
+    const idx = streaks.findIndex((s) => s.orderbookerId === streak.orderbookerId);
+    if (idx >= 0) {
+      streaks[idx] = streak;
+    } else {
+      streaks.push(streak);
+    }
+    await AsyncStorage.setItem(KEYS.VISIT_STREAKS, JSON.stringify(streaks));
+  },
+
+  getVisitStreak: async (orderbookerId: string): Promise<VisitStreak | null> => {
+    const raw = await AsyncStorage.getItem(KEYS.VISIT_STREAKS);
+    const streaks: VisitStreak[] = raw ? JSON.parse(raw) : [];
+    return streaks.find((s) => s.orderbookerId === orderbookerId) ?? null;
+  },
+
+  updateVisitStreak: async (orderbookerId: string, visitedToday: boolean): Promise<VisitStreak> => {
+    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    const existing = await StorageService.getVisitStreak(orderbookerId);
+
+    if (!existing) {
+      const newStreak: VisitStreak = {
+        orderbookerId,
+        currentStreak: visitedToday ? 1 : 0,
+        lastVisitDate: visitedToday ? today : '',
+        longestStreak: visitedToday ? 1 : 0,
+      };
+      await StorageService.saveVisitStreak(newStreak);
+      return newStreak;
+    }
+
+    // Already updated today
+    if (existing.lastVisitDate === today) {
+      return existing;
+    }
+
+    if (visitedToday) {
+      // Check if last visit was yesterday (consecutive)
+      const lastVisit = new Date(existing.lastVisitDate);
+      const todayDate = new Date(today);
+      const diffDays = Math.round((todayDate.getTime() - lastVisit.getTime()) / (1000 * 60 * 60 * 24));
+
+      const newCurrentStreak = diffDays <= 1 ? existing.currentStreak + 1 : 1;
+      const newLongestStreak = Math.max(existing.longestStreak, newCurrentStreak);
+
+      const updated: VisitStreak = {
+        ...existing,
+        currentStreak: newCurrentStreak,
+        lastVisitDate: today,
+        longestStreak: newLongestStreak,
+      };
+      await StorageService.saveVisitStreak(updated);
+      return updated;
+    } else {
+      // Not visited today — check if streak should be broken
+      const lastVisit = new Date(existing.lastVisitDate);
+      const todayDate = new Date(today);
+      const diffDays = Math.round((todayDate.getTime() - lastVisit.getTime()) / (1000 * 60 * 60 * 24));
+
+      if (diffDays > 1) {
+        // Streak broken — reset
+        const updated: VisitStreak = {
+          ...existing,
+          currentStreak: 0,
+        };
+        await StorageService.saveVisitStreak(updated);
+        return updated;
+      }
+      return existing;
     }
   },
 };

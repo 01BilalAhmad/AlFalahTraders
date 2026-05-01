@@ -1,6 +1,6 @@
 // Powered by OnSpace.AI
-import React, { memo } from 'react';
-import { View, Text, StyleSheet, Pressable, Linking } from 'react-native';
+import React, { memo, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, Pressable, Linking, Animated } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
 import { Shop } from '@/services/api';
@@ -23,8 +23,33 @@ export const ShopCard = memo(function ShopCard({
   onGpsVisit,
 }: ShopCardProps) {
   const isOverLimit = shop.balance > shop.creditLimit;
-  const utilisation = shop.creditLimit > 0 ? Math.min((shop.balance / shop.creditLimit) * 100, 100) : 0;
-  const barColor = isOverLimit ? Colors.danger : utilisation > 80 ? Colors.secondary : Colors.primary;
+  const rawUtilisation = shop.creditLimit > 0 ? (shop.balance / shop.creditLimit) * 100 : 0;
+  const utilisation = Math.min(rawUtilisation, 100);
+  const isApproachingLimit = !isOverLimit && rawUtilisation >= 90;
+  const barColor = isOverLimit ? Colors.danger : rawUtilisation >= 90 ? Colors.secondary : utilisation > 80 ? Colors.secondary : Colors.primary;
+
+  // Pulsing dot animation for 90%+ utilization
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (rawUtilisation >= 90) {
+      const animation = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 1.6,
+            duration: 600,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 600,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      animation.start();
+      return () => animation.stop();
+    }
+  }, [rawUtilisation >= 90]);
 
   const handleCall = () => {
     if (shop.phone) Linking.openURL(`tel:${shop.phone}`);
@@ -62,8 +87,15 @@ export const ShopCard = memo(function ShopCard({
       {/* Over limit banner */}
       {isOverLimit ? (
         <View style={styles.overLimitBanner}>
+          <Animated.View style={[styles.pulseDot, { transform: [{ scale: pulseAnim }] }]} />
           <MaterialIcons name="warning" size={13} color={Colors.danger} />
           <Text style={styles.overLimitText}>Over Credit Limit</Text>
+        </View>
+      ) : isApproachingLimit ? (
+        <View style={styles.approachingLimitBanner}>
+          <Animated.View style={[styles.pulseDotYellow, { transform: [{ scale: pulseAnim }] }]} />
+          <MaterialIcons name="warning" size={13} color={Colors.secondary} />
+          <Text style={styles.approachingLimitText}>Credit utilization at 90% — approaching limit</Text>
         </View>
       ) : null}
 
@@ -199,6 +231,34 @@ const styles = StyleSheet.create({
     fontSize: FontSize.xs,
     color: Colors.danger,
     fontWeight: FontWeight.semibold,
+  },
+  approachingLimitBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: Colors.secondaryLight,
+    borderRadius: Radius.sm,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    marginBottom: Spacing.xs,
+  },
+  approachingLimitText: {
+    fontSize: FontSize.xs,
+    color: Colors.secondary,
+    fontWeight: FontWeight.semibold,
+    flex: 1,
+  },
+  pulseDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: Colors.danger,
+  },
+  pulseDotYellow: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: Colors.secondary,
   },
   creditRow: {
     flexDirection: 'row',

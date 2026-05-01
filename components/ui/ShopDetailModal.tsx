@@ -10,6 +10,8 @@ import {
   ActivityIndicator,
   Linking,
   Dimensions,
+  TextInput,
+  Alert,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { BarChart } from 'react-native-chart-kit';
@@ -18,6 +20,7 @@ import { Shop, Transaction, ApiService } from '@/services/api';
 import { formatPKR, formatDateTime } from '@/utils/format';
 import { CreditBar } from './CreditBar';
 import { Badge } from './Badge';
+import { StorageService, ShopNote } from '@/services/storage';
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -42,11 +45,15 @@ export const ShopDetailModal = memo(function ShopDetailModal({
     recoveries: [],
   });
   const [chartLoading, setChartLoading] = useState(false);
+  const [shopNote, setShopNote] = useState<ShopNote | null>(null);
+  const [noteInput, setNoteInput] = useState('');
+  const [noteSaving, setNoteSaving] = useState(false);
 
   useEffect(() => {
     if (visible && shop) {
       loadRecent();
       loadChartData();
+      loadShopNote();
     }
   }, [visible, shop]);
 
@@ -100,6 +107,49 @@ export const ShopDetailModal = memo(function ShopDetailModal({
     } finally {
       setChartLoading(false);
     }
+  }
+
+  async function loadShopNote() {
+    if (!shop) return;
+    try {
+      const note = await StorageService.getShopNote(shop.id);
+      setShopNote(note);
+      setNoteInput(note ? note.note : '');
+    } catch {
+      setShopNote(null);
+      setNoteInput('');
+    }
+  }
+
+  async function handleSaveNote() {
+    if (!shop) return;
+    setNoteSaving(true);
+    try {
+      await StorageService.saveShopNote(shop.id, noteInput.trim());
+      await loadShopNote();
+    } catch {
+      Alert.alert('Error', 'Could not save note.');
+    } finally {
+      setNoteSaving(false);
+    }
+  }
+
+  async function handleDeleteNote() {
+    if (!shop) return;
+    Alert.alert('Delete Note', 'Are you sure you want to delete this note?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await StorageService.deleteShopNote(shop.id);
+            setShopNote(null);
+            setNoteInput('');
+          } catch { /* not critical */ }
+        },
+      },
+    ]);
   }
 
   if (!shop) return null;
@@ -293,6 +343,56 @@ export const ShopDetailModal = memo(function ShopDetailModal({
 
             {/* Recent transactions */}
             <Text style={styles.sectionTitle}>Recent Transactions</Text>
+
+            {/* Notes Section */}
+            <View style={styles.notesSection}>
+              <View style={styles.notesHeader}>
+                <View style={styles.notesHeaderLeft}>
+                  <View style={styles.notesIconWrap}>
+                    <MaterialIcons name="sticky-note-2" size={16} color={Colors.secondary} />
+                  </View>
+                  <Text style={styles.sectionTitleInline}>Notes / Remarks</Text>
+                </View>
+                {shopNote ? (
+                  <Pressable onPress={handleDeleteNote} hitSlop={8} style={styles.noteDeleteBtn}>
+                    <MaterialIcons name="delete-outline" size={16} color={Colors.danger} />
+                  </Pressable>
+                ) : null}
+              </View>
+              <View style={styles.noteInputWrap}>
+                <TextInput
+                  style={styles.noteTextInput}
+                  value={noteInput}
+                  onChangeText={setNoteInput}
+                  placeholder="Add a note about this shop..."
+                  placeholderTextColor={Colors.textMuted}
+                  maxLength={500}
+                  multiline
+                  numberOfLines={3}
+                />
+              </View>
+              <View style={styles.noteActions}>
+                {shopNote ? (
+                  <Text style={styles.noteUpdatedAt}>
+                    Last updated: {formatDateTime(shopNote.updatedAt)}
+                  </Text>
+                ) : null}
+                <Pressable
+                  style={({ pressed }) => [styles.noteSaveBtn, pressed && { opacity: 0.7 }]}
+                  onPress={handleSaveNote}
+                  disabled={!noteInput.trim() || noteSaving}
+                >
+                  {noteSaving ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <MaterialIcons name="save" size={14} color="#FFFFFF" />
+                  )}
+                  <Text style={styles.noteSaveBtnText}>
+                    {noteSaving ? 'Saving...' : shopNote ? 'Update' : 'Save Note'}
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
             {loading ? (
               <ActivityIndicator color={Colors.primary} style={{ marginVertical: Spacing.md }} />
             ) : recentTxns.length === 0 ? (
@@ -692,5 +792,83 @@ const styles = StyleSheet.create({
     fontSize: FontSize.md,
     fontWeight: FontWeight.bold,
     color: Colors.textInverse,
+  },
+  // Notes section
+  notesSection: {
+    backgroundColor: Colors.background,
+    borderRadius: Radius.md,
+    padding: Spacing.md,
+    marginBottom: Spacing.md,
+    ...Shadow.sm,
+  },
+  notesHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: Spacing.sm,
+  },
+  notesHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  notesIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: Colors.secondaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sectionTitleInline: {
+    fontSize: FontSize.md,
+    fontWeight: FontWeight.bold,
+    color: Colors.text,
+  },
+  noteDeleteBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: Colors.dangerLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  noteInputWrap: {
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.sm,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: Spacing.sm,
+    marginBottom: Spacing.sm,
+  },
+  noteTextInput: {
+    fontSize: FontSize.sm,
+    color: Colors.text,
+    minHeight: 60,
+    textAlignVertical: 'top',
+  },
+  noteActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  noteUpdatedAt: {
+    fontSize: FontSize.xs,
+    color: Colors.textMuted,
+    flex: 1,
+  },
+  noteSaveBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: Colors.secondary,
+    borderRadius: Radius.sm,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 8,
+  },
+  noteSaveBtnText: {
+    fontSize: FontSize.xs,
+    fontWeight: FontWeight.bold,
+    color: '#FFFFFF',
   },
 });
