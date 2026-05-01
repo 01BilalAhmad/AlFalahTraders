@@ -141,7 +141,7 @@ export default function ProfileScreen() {
       const monthTxns = await ApiService.getTransactions({
         createdBy: user.id,
         type: 'recovery',
-        startDate: firstOfMonth,
+        date: firstOfMonth,
         limit: 500,
       });
       setThisMonthRecovery(monthTxns.transactions.reduce((sum, t) => sum + t.amount, 0));
@@ -159,7 +159,7 @@ export default function ProfileScreen() {
           try {
             await logout();
             await SecureStorageService.clearAll();
-            router.replace('/login');
+            router.replace('/login' as any);
           } finally {
             setLoggingOut(false);
           }

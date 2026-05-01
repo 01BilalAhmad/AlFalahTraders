@@ -144,7 +144,6 @@ export function PinLockScreen({ onUnlock, onForceLogout }: PinLockScreenProps) {
     try {
       const result = await LocalAuthentication.authenticateAsync({
         promptMessage: 'Unlock Al Falah',
-        subtitle: 'Use your fingerprint to unlock',
         fallbackLabel: 'Use PIN',
         cancelLabel: 'Cancel',
       });

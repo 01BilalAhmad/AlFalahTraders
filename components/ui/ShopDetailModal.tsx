@@ -86,7 +86,7 @@ export const ShopDetailModal = memo(function ShopDetailModal({
         const endD = new Date(d.getFullYear(), d.getMonth() + 1, 0);
         labels.push(label);
         try {
-          const res = await ApiService.getTransactions({ shopId: shop.id, startDate, limit: 500 });
+          const res = await ApiService.getTransactions({ shopId: shop.id, date: startDate, limit: 500 });
           const endDateStr = `${endD.getFullYear()}-${String(endD.getMonth() + 1).padStart(2, '0')}-${String(endD.getDate()).padStart(2, '0')}`;
           const monthTxns = res.transactions.filter((t) => {
             const tDate = t.createdAt.split('T')[0];
@@ -316,11 +316,6 @@ export const ShopDetailModal = memo(function ShopDetailModal({
                   height={150}
                   yAxisLabel="Rs."
                   yAxisSuffix=""
-                  formatYLabel={(v) => {
-                    const n = parseFloat(v);
-                    if (n >= 1000) return `${(n / 1000).toFixed(0)}K`;
-                    return String(Math.round(n));
-                  }}
                   chartConfig={{
                     backgroundColor: Colors.surface,
                     backgroundGradientFrom: Colors.surface,

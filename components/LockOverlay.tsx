@@ -26,7 +26,7 @@ export function LockOverlay() {
   const handleForceLogout = useCallback(async () => {
     await logout();
     await SecureStorageService.clearAll();
-    router.replace('/login');
+    router.replace('/login' as any);
   }, [logout, router]);
 
   // Only show overlay if user is authenticated

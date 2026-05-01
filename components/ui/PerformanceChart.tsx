@@ -88,7 +88,7 @@ export const PerformanceChart = memo(function PerformanceChart({ userId }: Perfo
         const monthRes = await ApiService.getTransactions({
           createdBy: userId,
           type: 'recovery',
-          startDate: firstOfMonth,
+          date: firstOfMonth,
           limit: 500,
         });
         setTotalMonth(monthRes.transactions.reduce((s, t) => s + t.amount, 0));

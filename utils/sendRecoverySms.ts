@@ -16,7 +16,7 @@ interface SmsPayload {
 // Try to load native direct SMS module (Android only)
 let DirectSmsModule: any = null;
 try {
-  DirectSmsModule = ExpoModules.requireModule('DirectSms');
+  DirectSmsModule = (ExpoModules as any).requireModule?.('DirectSms') ?? null;
 } catch {
   console.log('[DirectSMS] Native module not available, will fallback to expo-sms');
 }
