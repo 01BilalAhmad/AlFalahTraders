@@ -17,6 +17,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useShops } from '@/hooks/useShops';
 import { ApiService, Shop } from '@/services/api';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
+import { ROUTE_DAYS, DAY_LABELS } from '@/constants/config';
 import { getTodayDayName, getTodayLabel, getTodayDateStr, capitalize, formatPKR } from '@/utils/format';
 import { ShopCard } from '@/components/ui/ShopCard';
 import { RecoveryBottomSheet } from '@/components/ui/RecoveryBottomSheet';
@@ -32,6 +33,11 @@ import { PendingMessagesSheet } from '@/components/ui/PendingMessagesSheet';
 import { StorageService, PendingNotification } from '@/services/storage';
 
 type ChartView = 'trend' | 'analysis' | 'none';
+
+// ── Section item types for grouped FlatList ──────────────────────────────────
+type SectionItem =
+  | { type: 'header'; dayKey: string; dayLabel: string; shopCount: number; isToday: boolean }
+  | { type: 'shop'; shop: Shop; dayKey: string };
 
 export default function TodayRouteScreen() {
   const insets = useSafeAreaInsets();
@@ -79,14 +85,15 @@ export default function TodayRouteScreen() {
 
   const todayDay = getTodayDayName();
   const isFriday = todayDay === 'friday';
+  const allRoutesEnabled = !!user?.allRoutesEnabled;
 
   useEffect(() => {
     if (user) {
-      loadTodayShops(user.id);
+      loadTodayShops(user.id, allRoutesEnabled);
       loadTodayStats();
       loadPendingNotifications();
     }
-  }, [user]);
+  }, [user, allRoutesEnabled]);
 
   async function loadPendingNotifications() {
     try {
@@ -113,10 +120,10 @@ export default function TodayRouteScreen() {
 
   const handleRefresh = useCallback(async () => {
     if (user) {
-      await loadTodayShops(user.id);
+      await loadTodayShops(user.id, allRoutesEnabled);
       await loadTodayStats();
     }
-  }, [user]);
+  }, [user, allRoutesEnabled]);
 
   const handleSync = async () => {
     if (offlineQueueCount === 0) return;
@@ -215,6 +222,7 @@ export default function TodayRouteScreen() {
     setVisitedShopIds((prev) => new Set([...prev, shopId]));
   };
 
+  // ── Filtered shops (search) ──────────────────────────────────────────────
   const filteredShops = useMemo(() => {
     if (!searchQuery.trim()) return todayShops;
     const q = searchQuery.toLowerCase();
@@ -226,9 +234,59 @@ export default function TodayRouteScreen() {
     );
   }, [todayShops, searchQuery]);
 
+  // ── Group shops by day for all-routes mode ───────────────────────────────
+  const groupedSections = useMemo(() => {
+    if (!allRoutesEnabled) return null;
+
+    // Group filtered shops by routeDay
+    const groups: Record<string, Shop[]> = {};
+    for (const shop of filteredShops) {
+      const day = shop.routeDay || 'other';
+      if (!groups[day]) groups[day] = [];
+      groups[day].push(shop);
+    }
+
+    // Sort by ROUTE_DAYS order (monday first), then any extra days
+    const sortedDays = Object.keys(groups).sort((a, b) => {
+      const idxA = ROUTE_DAYS.indexOf(a);
+      const idxB = ROUTE_DAYS.indexOf(b);
+      if (idxA === -1 && idxB === -1) return a.localeCompare(b);
+      if (idxA === -1) return 1;
+      if (idxB === -1) return -1;
+      return idxA - idxB;
+    });
+
+    // Build section items for FlatList
+    const items: SectionItem[] = [];
+    for (const dayKey of sortedDays) {
+      const dayShops = groups[dayKey];
+      const isToday = dayKey === todayDay;
+      items.push({
+        type: 'header',
+        dayKey,
+        dayLabel: DAY_LABELS[dayKey] || capitalize(dayKey),
+        shopCount: dayShops.length,
+        isToday,
+      });
+      for (const shop of dayShops) {
+        items.push({ type: 'shop', shop, dayKey });
+      }
+    }
+    return items;
+  }, [filteredShops, allRoutesEnabled, todayDay]);
+
+  // ── Stats ────────────────────────────────────────────────────────────────
   const totalOutstanding = todayShops.reduce((sum, s) => sum + s.balance, 0);
   const visitedCount = visitedShopIds.size;
   const progressPct = todayShops.length > 0 ? (visitedCount / todayShops.length) * 100 : 0;
+
+  // ── Determine if Friday should show holiday screen ───────────────────────
+  // Only show holiday if NOT allRoutesEnabled. If allRoutesEnabled, show shops even on Friday.
+  const showFridayHoliday = isFriday && !allRoutesEnabled;
+
+  // ── Hero badge label ─────────────────────────────────────────────────────
+  const routeBadgeLabel = allRoutesEnabled ? 'All Routes' : capitalize(todayDay);
+  const routeBadgeIcon: React.ComponentProps<typeof MaterialIcons>['name'] = allRoutesEnabled ? 'map' : 'route';
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
@@ -241,7 +299,7 @@ export default function TodayRouteScreen() {
         onSync={handleSync}
       />
 
-      {isFriday ? (
+      {showFridayHoliday ? (
         <View style={styles.holidayContainer}>
           <LinearGradient colors={['#FEF3C7', '#FFFBEB']} style={styles.holidayGradient}>
             <MaterialIcons name="wb-sunny" size={64} color={Colors.secondary} />
@@ -249,7 +307,255 @@ export default function TodayRouteScreen() {
             <Text style={styles.holidaySubtitle}>No route scheduled today. Enjoy your day!</Text>
           </LinearGradient>
         </View>
+      ) : allRoutesEnabled && groupedSections ? (
+        /* ── ALL ROUTES MODE: Day-wise grouped sections ─────────────────── */
+        <FlatList
+          data={groupedSections}
+          keyExtractor={(item, idx) =>
+            item.type === 'header' ? `header_${item.dayKey}` : `shop_${item.shop.id}`
+          }
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={isLoadingToday}
+              onRefresh={handleRefresh}
+              tintColor={Colors.primary}
+              colors={[Colors.primary]}
+            />
+          }
+          ListHeaderComponent={
+            <View>
+              {/* Hero Card - All Routes */}
+              <LinearGradient
+                colors={['#059669', '#065F46']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.heroCard}
+              >
+                <View style={styles.heroBubble1} />
+                <View style={styles.heroBubble2} />
+
+                <View style={styles.heroTop}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.heroGreeting} numberOfLines={1}>
+                      Hello, {user ? user.name.split(' ')[0] : 'Order Booker'} 👋
+                    </Text>
+                    <Text style={styles.heroDate}>{getTodayLabel()}</Text>
+                  </View>
+                </View>
+
+                {/* Badges */}
+                <View style={styles.badgesRow}>
+                  <View style={[styles.heroDayBadge, styles.allRoutesBadge]}>
+                    <MaterialIcons name={routeBadgeIcon} size={13} color="rgba(255,255,255,0.95)" />
+                    <Text style={styles.badgeText}>{routeBadgeLabel}</Text>
+                  </View>
+                  <Pressable style={styles.reportBadge} onPress={() => setShowReport(true)} hitSlop={8}>
+                    <MaterialIcons name="assessment" size={13} color="rgba(255,255,255,0.9)" />
+                    <Text style={styles.badgeText}>Report</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[
+                      styles.pendingBadge,
+                      pendingNotifications.length > 0 && styles.pendingBadgeActive,
+                    ]}
+                    onPress={() => setShowPending(true)}
+                    hitSlop={8}
+                  >
+                    <MaterialIcons name="pending-actions" size={13} color="rgba(255,255,255,0.9)" />
+                    <Text style={styles.badgeText}>Pending</Text>
+                    {pendingNotifications.length > 0 ? (
+                      <View style={styles.pendingCountDot}>
+                        <Text style={styles.pendingCountText}>{pendingNotifications.length}</Text>
+                      </View>
+                    ) : null}
+                  </Pressable>
+                </View>
+
+                {/* Progress Bar - All Routes */}
+                <View style={styles.progressSection}>
+                  <View style={styles.progressHeader}>
+                    <Text style={styles.progressLabel}>
+                      {visitedCount} of {todayShops.length} shops visited (all routes)
+                    </Text>
+                    <Text style={styles.progressPct}>{Math.round(progressPct)}%</Text>
+                  </View>
+                  <View style={styles.progressTrack}>
+                    <View
+                      style={[styles.progressFill, { width: `${Math.min(progressPct, 100)}%` }]}
+                    />
+                  </View>
+                </View>
+
+                {/* Stat Pills */}
+                <View style={styles.pillsRow}>
+                  <View style={styles.pill}>
+                    <Text style={styles.pillValue}>{todayShops.length}</Text>
+                    <Text style={styles.pillLabel}>Shops</Text>
+                  </View>
+                  <View style={styles.pillDivider} />
+                  <View style={styles.pill}>
+                    <Text style={styles.pillValue}>
+                      {formatPKR(totalOutstanding)}
+                    </Text>
+                    <Text style={styles.pillLabel}>Outstanding</Text>
+                  </View>
+                  <View style={styles.pillDivider} />
+                  <View style={styles.pill}>
+                    <Text style={[styles.pillValue, styles.pillGreen]}>
+                      {formatPKR(todayRecovery)}
+                    </Text>
+                    <Text style={styles.pillLabel}>Recovered</Text>
+                  </View>
+                </View>
+              </LinearGradient>
+
+              {/* Chart Toggle */}
+              <View style={styles.chartToggleRow}>
+                {(
+                  [
+                    { key: 'trend' as ChartView, icon: 'show-chart', label: 'Trend' },
+                    { key: 'analysis' as ChartView, icon: 'analytics', label: 'Analysis' },
+                    { key: 'none' as ChartView, icon: 'visibility-off', label: 'Hide' },
+                  ]
+                ).map((opt) => (
+                  <Pressable
+                    key={opt.key}
+                    style={[
+                      styles.chartTabBtn,
+                      chartView === opt.key && styles.chartTabBtnActive,
+                    ]}
+                    onPress={() => setChartView(opt.key)}
+                    hitSlop={4}
+                  >
+                    <MaterialIcons
+                      name={opt.icon as any}
+                      size={13}
+                      color={chartView === opt.key ? Colors.primaryDark : Colors.textMuted}
+                    />
+                    <Text
+                      style={[
+                        styles.chartTabLabel,
+                        chartView === opt.key && styles.chartTabLabelActive,
+                      ]}
+                    >
+                      {opt.label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+
+              {chartView === 'trend' && user ? (
+                <View style={styles.chartWrap}>
+                  <PerformanceChart userId={user.id} />
+                </View>
+              ) : chartView === 'analysis' && user ? (
+                <View style={styles.chartWrap}>
+                  <RecoveryAnalysisChart userId={user.id} />
+                </View>
+              ) : null}
+
+              {/* Search Bar */}
+              <View style={styles.searchRow}>
+                <MaterialIcons name="search" size={18} color={Colors.textSecondary} />
+                <TextInput
+                  style={styles.searchInput}
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  placeholder="Search shops, areas..."
+                  placeholderTextColor={Colors.textMuted}
+                />
+                {searchQuery ? (
+                  <Pressable
+                    onPress={() => setSearchQuery('')}
+                    hitSlop={8}
+                    style={styles.searchClear}
+                  >
+                    <MaterialIcons name="cancel" size={16} color={Colors.textMuted} />
+                  </Pressable>
+                ) : null}
+              </View>
+
+              {/* All Routes indicator */}
+              <View style={styles.shopCountRow}>
+                <View style={styles.shopCountLeft}>
+                  <View style={[styles.shopCountDot, { backgroundColor: Colors.blue }]} />
+                  <Text style={styles.shopCountText}>
+                    {filteredShops.length} {filteredShops.length === 1 ? 'shop' : 'shops'} across all routes
+                  </Text>
+                </View>
+                {visitedCount > 0 ? (
+                  <View style={styles.visitedChip}>
+                    <MaterialIcons name="check-circle" size={12} color={Colors.primary} />
+                    <Text style={styles.visitedChipText}>{visitedCount} visited</Text>
+                  </View>
+                ) : null}
+              </View>
+            </View>
+          }
+          ListEmptyComponent={
+            !isLoadingToday ? (
+              <View style={styles.emptyContainer}>
+                <LinearGradient
+                  colors={[Colors.primaryLight, Colors.background]}
+                  style={styles.emptyGradient}
+                >
+                  <MaterialIcons name="store-mall-directory" size={56} color={Colors.primary} />
+                  <Text style={styles.emptyTitle}>
+                    {searchQuery ? 'No shops found' : 'No shops found'}
+                  </Text>
+                  <Text style={styles.emptySubtitle}>
+                    {searchQuery
+                      ? 'Try a different search term'
+                      : 'No shops are assigned to your routes'}
+                  </Text>
+                </LinearGradient>
+              </View>
+            ) : null
+          }
+          renderItem={({ item }: { item: SectionItem }) => {
+            if (item.type === 'header') {
+              return (
+                <View style={[styles.daySectionHeader, item.isToday && styles.daySectionHeaderToday]}>
+                  <View style={styles.daySectionLeft}>
+                    {item.isToday ? (
+                      <View style={styles.todayDot} />
+                    ) : null}
+                    <MaterialIcons
+                      name={item.isToday ? 'today' : 'calendar-view-day'}
+                      size={16}
+                      color={item.isToday ? Colors.primary : Colors.textSecondary}
+                    />
+                    <Text style={[styles.daySectionTitle, item.isToday && styles.daySectionTitleToday]}>
+                      {item.dayLabel}
+                    </Text>
+                    {item.isToday ? (
+                      <View style={styles.todayBadge}>
+                        <Text style={styles.todayBadgeText}>Today</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                  <Text style={styles.daySectionCount}>{item.shopCount} shops</Text>
+                </View>
+              );
+            }
+            // Shop card
+            return (
+              <View style={styles.shopCardInGroup}>
+                <ShopCard
+                  shop={item.shop}
+                  isVisited={visitedShopIds.has(item.shop.id)}
+                  onCollect={() => setRecoveryShop(item.shop)}
+                  onPress={() => setDetailShop(item.shop)}
+                  onGpsVisit={() => setGpsVisitShop(item.shop)}
+                />
+              </View>
+            );
+          }}
+          contentContainerStyle={styles.listContent}
+        />
       ) : (
+        /* ── NORMAL MODE: Today's route only ────────────────────────────── */
         <FlatList
           data={filteredShops}
           keyExtractor={(item) => item.id}
@@ -264,7 +570,7 @@ export default function TodayRouteScreen() {
           }
           ListHeaderComponent={
             <View>
-              {/* Hero Card */}
+              {/* Hero Card - Normal */}
               <LinearGradient
                 colors={['#059669', '#065F46']}
                 start={{ x: 0, y: 0 }}
@@ -274,7 +580,6 @@ export default function TodayRouteScreen() {
                 <View style={styles.heroBubble1} />
                 <View style={styles.heroBubble2} />
 
-                {/* Top Row: Greeting + Badges */}
                 <View style={styles.heroTop}>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.heroGreeting} numberOfLines={1}>
@@ -284,11 +589,11 @@ export default function TodayRouteScreen() {
                   </View>
                 </View>
 
-                {/* Quick Action Badges */}
+                {/* Badges */}
                 <View style={styles.badgesRow}>
                   <View style={styles.heroDayBadge}>
-                    <MaterialIcons name="route" size={13} color="rgba(255,255,255,0.9)" />
-                    <Text style={styles.badgeText}>{capitalize(todayDay)}</Text>
+                    <MaterialIcons name={routeBadgeIcon} size={13} color="rgba(255,255,255,0.9)" />
+                    <Text style={styles.badgeText}>{routeBadgeLabel}</Text>
                   </View>
                   <Pressable style={styles.reportBadge} onPress={() => setShowReport(true)} hitSlop={8}>
                     <MaterialIcons name="assessment" size={13} color="rgba(255,255,255,0.9)" />
@@ -350,7 +655,7 @@ export default function TodayRouteScreen() {
                 </View>
               </LinearGradient>
 
-              {/* Chart Toggle (collapsed by default for speed) */}
+              {/* Chart Toggle */}
               <View style={styles.chartToggleRow}>
                 {(
                   [
@@ -618,6 +923,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.25)',
   },
+  allRoutesBadge: {
+    backgroundColor: 'rgba(37,99,235,0.25)',
+    borderColor: 'rgba(37,99,235,0.5)',
+  },
   reportBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -822,6 +1131,65 @@ const styles = StyleSheet.create({
     fontSize: FontSize.xs,
     color: Colors.primaryDark,
     fontWeight: FontWeight.semibold,
+  },
+  // ── Day Section Header (all routes mode) ──────────────────────────────────
+  daySectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    marginTop: Spacing.sm,
+    backgroundColor: Colors.surface,
+    marginHorizontal: Spacing.md,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+    ...Shadow.sm,
+  },
+  daySectionHeaderToday: {
+    backgroundColor: Colors.primaryLight,
+    borderColor: Colors.primary,
+    borderWidth: 1.5,
+  },
+  daySectionLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+  },
+  todayDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: Colors.primary,
+  },
+  daySectionTitle: {
+    fontSize: FontSize.base,
+    fontWeight: FontWeight.bold,
+    color: Colors.text,
+  },
+  daySectionTitleToday: {
+    color: Colors.primaryDark,
+  },
+  todayBadge: {
+    backgroundColor: Colors.primary,
+    borderRadius: Radius.full,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    marginLeft: 4,
+  },
+  todayBadgeText: {
+    fontSize: 10,
+    fontWeight: FontWeight.bold,
+    color: '#FFFFFF',
+  },
+  daySectionCount: {
+    fontSize: FontSize.xs,
+    color: Colors.textSecondary,
+    fontWeight: FontWeight.semibold,
+  },
+  shopCardInGroup: {
+    paddingHorizontal: Spacing.md,
   },
   // Empty
   emptyContainer: {

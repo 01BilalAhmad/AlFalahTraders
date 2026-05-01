@@ -43,7 +43,7 @@ export default function LoginScreen() {
         const { StorageService } = await import('@/services/storage');
         const savedUser = await StorageService.getUser();
         if (savedUser) {
-          await triggerFullSync(savedUser.id);
+          await triggerFullSync(savedUser.id, !!savedUser.allRoutesEnabled);
         }
       } catch {
         // Non-critical

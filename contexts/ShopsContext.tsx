@@ -1,7 +1,7 @@
 // Powered by OnSpace.AI
 import React, { createContext, useState, useCallback, useEffect, useRef, ReactNode } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
-import { ApiService, Shop } from '@/services/api';
+import { ApiService, Shop, User } from '@/services/api';
 import { StorageService, OfflineRecovery } from '@/services/storage';
 import { getTodayDayName } from '@/utils/format';
 import {
@@ -24,11 +24,11 @@ export interface ShopsContextType {
   isSyncing: boolean;
   lastSyncTime: string | null;
   syncStatus: 'idle' | 'syncing' | 'success' | 'error';
-  loadTodayShops: (userId: string) => Promise<void>;
+  loadTodayShops: (userId: string, allRoutesEnabled?: boolean) => Promise<void>;
   loadAllShops: (userId: string) => Promise<void>;
   addToOfflineQueue: (recovery: OfflineRecovery) => Promise<void>;
   syncOfflineQueue: () => Promise<SyncResult>;
-  triggerFullSync: (userId: string) => Promise<boolean>;
+  triggerFullSync: (userId: string, allRoutesEnabled?: boolean) => Promise<boolean>;
   setIsOnline: (v: boolean) => void;
 }
 
@@ -185,24 +185,37 @@ export function ShopsProvider({ children }: { children: ReactNode }) {
   }, []); // empty deps — safe because we use refs
 
   // ─── Load today's shops ───────────────────────────────────────────────────
-  const loadTodayShops = useCallback(async (userId: string) => {
+  const loadTodayShops = useCallback(async (userId: string, allRoutesEnabled?: boolean) => {
     currentUserIdRef.current = userId;
     setIsLoadingToday(true);
     try {
-      const day = getTodayDayName();
-      if (day === 'friday' || day === 'sunday') {
-        setTodayShops([]);
-        return;
+      if (allRoutesEnabled) {
+        // All routes mode: fetch ALL shops (no routeDay filter)
+        const shops = await ApiService.getShops({ orderbookerId: userId });
+        setTodayShops(shops);
+        await StorageService.saveShops(shops);
+        setLastSyncTime(new Date().toISOString());
+      } else {
+        // Normal mode: only today's route shops
+        const day = getTodayDayName();
+        if (day === 'friday' || day === 'sunday') {
+          setTodayShops([]);
+          return;
+        }
+        const shops = await ApiService.getShops({ orderbookerId: userId, routeDay: day });
+        setTodayShops(shops);
+        await StorageService.saveShops(shops);
+        setLastSyncTime(new Date().toISOString());
       }
-      const shops = await ApiService.getShops({ orderbookerId: userId, routeDay: day });
-      setTodayShops(shops);
-      await StorageService.saveShops(shops);
-      setLastSyncTime(new Date().toISOString());
     } catch {
       const cached = await StorageService.getShops();
-      const day = getTodayDayName();
-      const filtered = cached.filter((s) => s.routeDay === day);
-      setTodayShops(filtered);
+      if (allRoutesEnabled) {
+        setTodayShops(cached);
+      } else {
+        const day = getTodayDayName();
+        const filtered = cached.filter((s) => s.routeDay === day);
+        setTodayShops(filtered);
+      }
     } finally {
       setIsLoadingToday(false);
       await refreshOfflineQueue();
@@ -279,13 +292,17 @@ export function ShopsProvider({ children }: { children: ReactNode }) {
   }, [refreshOfflineQueue]);
 
   // ─── Full sync (initial download on login) ────────────────────────────────
-  const triggerFullSync = useCallback(async (userId: string): Promise<boolean> => {
+  const triggerFullSync = useCallback(async (userId: string, allRoutesEnabled?: boolean): Promise<boolean> => {
     currentUserIdRef.current = userId;
     const ok = await performFullSync(userId);
     if (ok) {
       const cached = await StorageService.getShops();
-      const day = getTodayDayName();
-      setTodayShops(cached.filter((s) => s.routeDay === day));
+      if (allRoutesEnabled) {
+        setTodayShops(cached);
+      } else {
+        const day = getTodayDayName();
+        setTodayShops(cached.filter((s) => s.routeDay === day));
+      }
       setAllShops(cached);
       const t = await StorageService.getLastSync();
       setLastSyncTime(t);
