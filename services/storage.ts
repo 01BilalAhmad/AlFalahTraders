@@ -1,6 +1,7 @@
 // Powered by OnSpace.AI
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { User, Shop } from './api';
+import { getTodayDateStr } from '@/utils/format';
 
 const KEYS = {
   USER: 'af_user',
@@ -14,6 +15,7 @@ const KEYS = {
   SHOP_NOTES: 'af_shop_notes',
   DAILY_TARGETS: 'af_daily_targets',
   VISIT_STREAKS: 'af_visit_streaks',
+  TODAY_RECOVERY: 'af_today_recovery',
 };
 
 export interface PendingNotification {
@@ -358,6 +360,24 @@ export const StorageService = {
         return updated;
       }
       return existing;
+    }
+  },
+
+  // --- Today's Recovery Cache (persists across page refreshes) ---
+  saveTodayRecovery: async (amount: number) => {
+    const entry = { date: getTodayDateStr(), amount };
+    await AsyncStorage.setItem(KEYS.TODAY_RECOVERY, JSON.stringify(entry));
+  },
+
+  getTodayRecovery: async (): Promise<number> => {
+    try {
+      const raw = await AsyncStorage.getItem(KEYS.TODAY_RECOVERY);
+      if (!raw) return 0;
+      const entry = JSON.parse(raw);
+      // Only return cached value if it's from today
+      return entry.date === getTodayDateStr() ? entry.amount : 0;
+    } catch {
+      return 0;
     }
   },
 };

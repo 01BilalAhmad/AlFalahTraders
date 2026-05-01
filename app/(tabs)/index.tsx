@@ -81,6 +81,14 @@ export default function TodayRouteScreen() {
   }>({ visible: false, shopPhone: '', shopName: '', openingBalance: 0, recoveryAmount: 0, remainingBalance: 0 });
   const [visitedShopIds, setVisitedShopIds] = useState<Set<string>>(new Set());
   const [todayRecovery, setTodayRecovery] = useState(0);
+
+  // Load cached todayRecovery on mount so it doesn't show 0 after refresh
+  useEffect(() => {
+    StorageService.getTodayRecovery().then((cached) => {
+      if (cached > 0) setTodayRecovery(cached);
+    });
+  }, []);
+
   const [searchQuery, setSearchQuery] = useState('');
   const [chartView, setChartView] = useState<ChartView>('none');
   const [smsSentCount, setSmsSentCount] = useState(0);
@@ -137,12 +145,17 @@ export default function TodayRouteScreen() {
       const myEntry = res.orderbookers.find((ob) => ob.orderbookerId === user.id);
       if (myEntry) {
         setTodayRecovery(myEntry.totalRecovery);
+        StorageService.saveTodayRecovery(myEntry.totalRecovery);
         const visited = new Set(
           myEntry.shops.filter((s) => s.visited).map((s) => s.shopId)
         );
         setVisitedShopIds(visited);
       }
-    } catch { /* not critical */ }
+      // If myEntry not found, don't reset — keep cached value
+    } catch {
+      // API failed — keep cached value, don't reset to 0
+      console.warn('[loadTodayStats] Failed to fetch, using cached value');
+    }
   }
 
   const handleRefresh = useCallback(async () => {
@@ -192,7 +205,11 @@ export default function TodayRouteScreen() {
           outOfRange: payload.outOfRange,
         });
         setVisitedShopIds((prev) => new Set([...prev, shopId]));
-        setTodayRecovery((prev) => prev + payload.amount);
+        setTodayRecovery((prev) => {
+          const newTotal = prev + payload.amount;
+          StorageService.saveTodayRecovery(newTotal);
+          return newTotal;
+        });
         // Also create a ShopVisit record so admin map can show the location
         if (payload.markGpsVisit && payload.gpsLat && payload.gpsLng) {
           try {
@@ -256,6 +273,12 @@ export default function TodayRouteScreen() {
         if (payload.markGpsVisit) {
           setVisitedShopIds((prev) => new Set([...prev, shopId]));
         }
+        // Increment todayRecovery for offline recoveries too
+        setTodayRecovery((prev) => {
+          const newTotal = prev + payload.amount;
+          StorageService.saveTodayRecovery(newTotal);
+          return newTotal;
+        });
         // Feature 12: Track last offline recovery for undo
         setLastRecoveryInfo({ shopId, amount: payload.amount, isOffline: true, localId });
         // Feature 13: Update last recovery date
@@ -295,7 +318,11 @@ export default function TodayRouteScreen() {
 
     try {
       // Reverse the local state
-      setTodayRecovery((prev) => Math.max(0, prev - amount));
+      setTodayRecovery((prev) => {
+        const newTotal = Math.max(0, prev - amount);
+        StorageService.saveTodayRecovery(newTotal);
+        return newTotal;
+      });
       setVisitedShopIds((prev) => {
         const next = new Set(prev);
         next.delete(shopId);
