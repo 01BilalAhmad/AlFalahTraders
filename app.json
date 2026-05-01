@@ -51,7 +51,8 @@
         {
           "sendSmsPermission": "Allow Al FALAH Credit System to send SMS notifications for recovery updates."
         }
-      ]
+      ],
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true
