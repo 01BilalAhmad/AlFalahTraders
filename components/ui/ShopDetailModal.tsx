@@ -17,6 +17,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { BarChart } from 'react-native-chart-kit';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
 import { Shop, Transaction, ApiService } from '@/services/api';
+import { getShopDisplayBalance } from '@/components/ui/ShopCard';
 import { formatPKR, formatDateTime } from '@/utils/format';
 import { CreditBar } from './CreditBar';
 import { Badge } from './Badge';
@@ -27,6 +28,7 @@ const screenWidth = Dimensions.get('window').width;
 interface ShopDetailModalProps {
   visible: boolean;
   shop: Shop | null;
+  companyId?: string;
   onClose: () => void;
   onCollect: () => void;
 }
@@ -34,6 +36,7 @@ interface ShopDetailModalProps {
 export const ShopDetailModal = memo(function ShopDetailModal({
   visible,
   shop,
+  companyId,
   onClose,
   onCollect,
 }: ShopDetailModalProps) {
@@ -154,8 +157,9 @@ export const ShopDetailModal = memo(function ShopDetailModal({
 
   if (!shop) return null;
 
-  const utilisationPct = shop.creditLimit > 0 ? Math.min((shop.balance / shop.creditLimit) * 100, 100) : 0;
-  const isOverLimit = shop.balance > shop.creditLimit;
+  const { balance: displayBalance, creditLimit: displayCreditLimit } = getShopDisplayBalance(shop, companyId);
+  const utilisationPct = displayCreditLimit > 0 ? Math.min((displayBalance / displayCreditLimit) * 100, 100) : 0;
+  const isOverLimit = displayBalance > displayCreditLimit;
   const hasChartData = chartData.credits.some((v) => v > 0) || chartData.recoveries.some((v) => v > 0);
 
   const totalRecovery = chartData.recoveries.reduce((s, v) => s + v, 0);
@@ -218,7 +222,7 @@ export const ShopDetailModal = memo(function ShopDetailModal({
                 </View>
                 <Text style={styles.balanceLabel}>Outstanding</Text>
                 <Text style={[styles.balanceValue, { color: Colors.danger }]}>
-                  {formatPKR(shop.balance)}
+                  {formatPKR(displayBalance)}
                 </Text>
               </View>
               <View style={styles.balanceDivider} />
@@ -228,7 +232,7 @@ export const ShopDetailModal = memo(function ShopDetailModal({
                 </View>
                 <Text style={styles.balanceLabel}>Credit Limit</Text>
                 <Text style={[styles.balanceValue, { color: '#2563EB' }]}>
-                  {formatPKR(shop.creditLimit)}
+                  {formatPKR(displayCreditLimit)}
                 </Text>
               </View>
             </View>
@@ -255,7 +259,7 @@ export const ShopDetailModal = memo(function ShopDetailModal({
               {isOverLimit ? (
                 <View style={styles.overLimitRow}>
                   <MaterialIcons name="warning" size={14} color={Colors.danger} />
-                  <Text style={styles.overLimitText}>Over Credit Limit by {formatPKR(shop.balance - shop.creditLimit)}</Text>
+                  <Text style={styles.overLimitText}>Over Credit Limit by {formatPKR(displayBalance - displayCreditLimit)}</Text>
                 </View>
               ) : null}
             </View>

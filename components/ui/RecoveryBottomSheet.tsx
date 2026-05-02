@@ -23,6 +23,7 @@ import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
 import { Shop } from '@/services/api';
+import { getShopDisplayBalance } from '@/components/ui/ShopCard';
 import { formatPKR } from '@/utils/format';
 import { getDistanceMeters } from '@/utils/distance';
 import { QUICK_AMOUNTS, MIN_RECOVERY, MAX_RECOVERY } from '@/constants/config';
@@ -32,6 +33,7 @@ const SCREEN_WIDTH = Dimensions.get('window').width;
 interface RecoveryBottomSheetProps {
   visible: boolean;
   shop: Shop | null;
+  companyId?: string;
   onClose: () => void;
   onSubmit: (payload: {
     amount: number;
@@ -185,6 +187,7 @@ const successStyles = StyleSheet.create({
 export function RecoveryBottomSheet({
   visible,
   shop,
+  companyId,
   onClose,
   onSubmit,
   isSubmitting,
@@ -301,12 +304,15 @@ export function RecoveryBottomSheet({
       Alert.alert('Invalid Amount', `Maximum recovery amount is ${formatPKR(MAX_RECOVERY)}`);
       return;
     }
-    if (shop && numAmount > shop.balance) {
-      Alert.alert(
-        'Exceeds Balance',
-        `Recovery amount exceeds shop balance of ${formatPKR(shop.balance)}`
-      );
-      return;
+    if (shop) {
+      const { balance: displayBalance } = getShopDisplayBalance(shop, companyId);
+      if (numAmount > displayBalance) {
+        Alert.alert(
+          'Exceeds Balance',
+          `Recovery amount exceeds shop balance of ${formatPKR(displayBalance)}`
+        );
+        return;
+      }
     }
 
     // Shop Visit Verification: Check if order booker is within 100m of the shop
@@ -348,12 +354,13 @@ export function RecoveryBottomSheet({
 
   if (!shop) return null;
 
+  const { balance: displayBalance, creditLimit: displayCreditLimit } = getShopDisplayBalance(shop, companyId);
   const numericAmount = parseInt(amount, 10) || 0;
-  const utilisationPct = shop.creditLimit > 0 ? Math.min((shop.balance / shop.creditLimit) * 100, 100) : 0;
+  const utilisationPct = displayCreditLimit > 0 ? Math.min((displayBalance / displayCreditLimit) * 100, 100) : 0;
   const mapUrl = gpsLat && gpsLng ? getOsmStaticUrl(gpsLat, gpsLng) : null;
   const hasGps = !!(gpsLat && gpsLng);
-  const isValid = numericAmount >= MIN_RECOVERY && numericAmount <= MAX_RECOVERY && (!shop || numericAmount <= shop.balance);
-  const remainingBalance = shop.balance - numericAmount;
+  const isValid = numericAmount >= MIN_RECOVERY && numericAmount <= MAX_RECOVERY && numericAmount <= displayBalance;
+  const remainingBalance = displayBalance - numericAmount;
 
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={handleClose}>
@@ -414,7 +421,7 @@ export function RecoveryBottomSheet({
                 <View>
                   <Text style={styles.balanceChipLabel}>Outstanding</Text>
                   <Text style={[styles.balanceChipValue, { color: '#FCA5A5' }]}>
-                    {formatPKR(shop.balance)}
+                    {formatPKR(displayBalance)}
                   </Text>
                 </View>
               </View>
@@ -424,7 +431,7 @@ export function RecoveryBottomSheet({
                 <View>
                   <Text style={styles.balanceChipLabel}>Credit Limit</Text>
                   <Text style={[styles.balanceChipValue, { color: '#93C5FD' }]}>
-                    {formatPKR(shop.creditLimit)}
+                    {formatPKR(displayCreditLimit)}
                   </Text>
                 </View>
               </View>
@@ -496,10 +503,10 @@ export function RecoveryBottomSheet({
                   <MaterialIcons name="info" size={13} color={Colors.secondary} />
                   <Text style={styles.hintText}>Min: {formatPKR(MIN_RECOVERY)}</Text>
                 </View>
-              ) : shop && numericAmount > shop.balance ? (
+              ) : numericAmount > displayBalance ? (
                 <View style={styles.hintRow}>
                   <MaterialIcons name="warning" size={13} color={Colors.danger} />
-                  <Text style={[styles.hintText, { color: Colors.danger }]}>Exceeds balance of {formatPKR(shop.balance)}</Text>
+                  <Text style={[styles.hintText, { color: Colors.danger }]}>Exceeds balance of {formatPKR(displayBalance)}</Text>
                 </View>
               ) : null}
 
@@ -527,7 +534,7 @@ export function RecoveryBottomSheet({
             </View>
 
             {/* New Balance Preview Card */}
-            {numericAmount > 0 && numericAmount <= shop.balance ? (
+            {numericAmount > 0 && numericAmount <= displayBalance ? (
               <View style={styles.balancePreviewCard}>
                 <LinearGradient
                   colors={['#ECFDF5', '#D1FAE5']}
@@ -543,7 +550,7 @@ export function RecoveryBottomSheet({
                     <View style={styles.balancePreviewItem}>
                       <Text style={styles.balancePreviewLabel}>Current</Text>
                       <Text style={[styles.balancePreviewValue, { color: Colors.danger }]}>
-                        {formatPKR(shop.balance)}
+                        {formatPKR(displayBalance)}
                       </Text>
                     </View>
                     <MaterialIcons name="arrow-forward" size={16} color={Colors.primary} />
@@ -557,11 +564,11 @@ export function RecoveryBottomSheet({
                   {/* Reduction bar */}
                   <View style={styles.reductionBar}>
                     <View style={[styles.reductionBarFill, {
-                      width: `${Math.min((numericAmount / shop.balance) * 100, 100)}%`,
+                      width: `${Math.min((numericAmount / displayBalance) * 100, 100)}%`,
                     }]} />
                   </View>
                   <Text style={styles.reductionText}>
-                    {((numericAmount / shop.balance) * 100).toFixed(0)}% reduction
+                    {((numericAmount / displayBalance) * 100).toFixed(0)}% reduction
                   </Text>
                 </LinearGradient>
               </View>

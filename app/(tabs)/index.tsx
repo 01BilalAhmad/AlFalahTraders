@@ -958,6 +958,7 @@ export default function TodayRouteScreen() {
       <RecoveryBottomSheet
         visible={recoveryShop !== null}
         shop={recoveryShop}
+        companyId={user?.companyId}
         onClose={() => setRecoveryShop(null)}
         onSubmit={handleSubmitRecovery}
         isSubmitting={isSubmitting}
@@ -973,6 +974,7 @@ export default function TodayRouteScreen() {
       <ShopDetailModal
         visible={detailShop !== null}
         shop={detailShop}
+        companyId={user?.companyId}
         onClose={() => setDetailShop(null)}
         onCollect={() => {
           setRecoveryShop(detailShop);
