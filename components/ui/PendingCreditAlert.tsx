@@ -1,33 +1,35 @@
 // Powered by OnSpace.AI
+// Shows pending RECOVERY alert for orderbooker (credits are only managed by admin on web)
 import React, { memo, useEffect, useState } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
 import { ApiService } from '@/services/api';
 
-interface PendingCreditAlertProps {
-  /** Filter by orderbooker ID to show only relevant pending credits */
+interface PendingRecoveryAlertProps {
+  /** Filter by orderbooker ID to show only relevant pending recoveries */
   orderbookerId?: string;
 }
 
 export const PendingCreditAlert = memo(function PendingCreditAlert({
   orderbookerId,
-}: PendingCreditAlertProps) {
+}: PendingRecoveryAlertProps) {
   const [pendingCount, setPendingCount] = useState(0);
   const [totalAmount, setTotalAmount] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    loadPendingCredits();
+    loadPendingRecoveries();
     // Refresh every 60 seconds
-    const interval = setInterval(loadPendingCredits, 60000);
+    const interval = setInterval(loadPendingRecoveries, 60000);
     return () => clearInterval(interval);
   }, [orderbookerId]);
 
-  async function loadPendingCredits() {
+  async function loadPendingRecoveries() {
     try {
+      // Fetch pending recovery transactions for this orderbooker
       const params: Record<string, string | number> = {
-        type: 'credit',
+        type: 'recovery',
         status: 'pending',
         limit: 500,
         page: 1,
@@ -54,7 +56,7 @@ export const PendingCreditAlert = memo(function PendingCreditAlert({
       </View>
       <View style={styles.textBlock}>
         <Text style={styles.bannerTitle}>
-          {pendingCount} pending credit {pendingCount === 1 ? 'approval' : 'approvals'} awaiting admin
+          {pendingCount} pending recovery {pendingCount === 1 ? 'approval' : 'approvals'} awaiting admin
         </Text>
         {totalAmount > 0 ? (
           <Text style={styles.bannerSub}>
