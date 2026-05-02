@@ -97,6 +97,13 @@ export async function syncOfflineRecoveries(): Promise<SyncResult> {
     // One-by-one is primary — most reliable since we don't have previousBalance for batch
     for (const item of queue) {
       try {
+        // Get companyId from stored user for multi-company support
+        let companyId: string | undefined;
+        try {
+          const user = await StorageService.getUser();
+          companyId = user?.companyId || undefined;
+        } catch {}
+
         await ApiService.submitRecovery({
           shopId: item.shopId,
           type: 'recovery',
@@ -106,6 +113,7 @@ export async function syncOfflineRecoveries(): Promise<SyncResult> {
           gpsLat: item.gpsLat,
           gpsLng: item.gpsLng,
           gpsAddress: item.gpsAddress,
+          companyId,
         });
         // Also create a ShopVisit record so admin map shows the location
         if (item.gpsLat && item.gpsLng) {

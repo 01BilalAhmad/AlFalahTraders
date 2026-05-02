@@ -3,9 +3,19 @@ import React, { memo, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Pressable, Linking, Animated } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
-import { Shop } from '@/services/api';
+import { Shop, CompanyBalance } from '@/services/api';
 import { formatPKR } from '@/utils/format';
 
+// Helper: get display balance for a shop based on the user's assigned company
+export function getShopDisplayBalance(shop: Shop, companyId?: string): { balance: number; creditLimit: number } {
+  if (companyId && shop.companyBalances && shop.companyBalances.length > 0) {
+    const companyBal = shop.companyBalances.find((cb: CompanyBalance) => cb.companyId === companyId);
+    if (companyBal) {
+      return { balance: companyBal.balance, creditLimit: companyBal.creditLimit || shop.creditLimit };
+    }
+  }
+  return { balance: shop.balance, creditLimit: shop.creditLimit };
+}
 
 interface ShopCardProps {
   shop: Shop;
@@ -13,6 +23,7 @@ interface ShopCardProps {
   onCollect: () => void;
   onPress: () => void;
   onGpsVisit?: () => void;
+  companyId?: string;
 }
 
 export const ShopCard = memo(function ShopCard({
@@ -21,9 +32,11 @@ export const ShopCard = memo(function ShopCard({
   onCollect,
   onPress,
   onGpsVisit,
+  companyId,
 }: ShopCardProps) {
-  const isOverLimit = shop.balance > shop.creditLimit;
-  const rawUtilisation = shop.creditLimit > 0 ? (shop.balance / shop.creditLimit) * 100 : 0;
+  const { balance: displayBalance, creditLimit: displayCreditLimit } = getShopDisplayBalance(shop, companyId);
+  const isOverLimit = displayBalance > displayCreditLimit;
+  const rawUtilisation = displayCreditLimit > 0 ? (displayBalance / displayCreditLimit) * 100 : 0;
   const utilisation = Math.min(rawUtilisation, 100);
   const isApproachingLimit = !isOverLimit && rawUtilisation >= 90;
   const barColor = isOverLimit ? Colors.danger : rawUtilisation >= 90 ? Colors.secondary : utilisation > 80 ? Colors.secondary : Colors.primary;
@@ -72,8 +85,8 @@ export const ShopCard = memo(function ShopCard({
           </Text>
         </View>
         <View style={styles.balanceCol}>
-          <Text style={[styles.balance, { color: shop.balance > 0 ? Colors.danger : Colors.primary }]}>
-            {formatPKR(shop.balance)}
+          <Text style={[styles.balance, { color: displayBalance > 0 ? Colors.danger : Colors.primary }]}>
+            {formatPKR(displayBalance)}
           </Text>
           {isVisited ? (
             <View style={styles.visitedBadge}>
@@ -109,7 +122,7 @@ export const ShopCard = memo(function ShopCard({
         </Text>
       </View>
       <Text style={styles.creditLabel}>
-        Credit: {formatPKR(shop.balance)} / {formatPKR(shop.creditLimit)}
+        Credit: {formatPKR(displayBalance)} / {formatPKR(displayCreditLimit)}
       </Text>
 
       {/* Actions */}

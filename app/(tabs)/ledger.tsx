@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/hooks/useAuth';
 import { useShops } from '@/hooks/useShops';
 import { ApiService, LedgerResponse, Shop, Transaction } from '@/services/api';
+import { getShopDisplayBalance } from '@/components/ui/ShopCard';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
 import { formatPKR, formatDateTime } from '@/utils/format';
 import { downloadLedgerPdf } from '@/utils/generateLedgerPdf';
@@ -480,8 +481,8 @@ export default function LedgerScreen() {
                     <Text style={styles.shopPickerArea}>{item.area}</Text>
                   </View>
                   <View style={styles.shopPickerRight}>
-                    <Text style={[styles.shopPickerBalance, { color: item.balance > 0 ? Colors.danger : Colors.primary }]}>
-                      {formatPKR(item.balance)}
+                    <Text style={[styles.shopPickerBalance, { color: getShopDisplayBalance(item, user?.companyId).balance > 0 ? Colors.danger : Colors.primary }]}>
+                      {formatPKR(getShopDisplayBalance(item, user?.companyId).balance)}
                     </Text>
                     {item.id === selectedShop?.id ? (
                       <MaterialIcons name="check-circle" size={16} color={Colors.primary} />

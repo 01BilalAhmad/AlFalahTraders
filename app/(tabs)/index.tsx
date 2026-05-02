@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/hooks/useAuth';
 import { useShops } from '@/hooks/useShops';
 import { ApiService, Shop } from '@/services/api';
+import { getShopDisplayBalance } from '@/components/ui/ShopCard';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constants/theme';
 import { ROUTE_DAYS, DAY_LABELS } from '@/constants/config';
 import { getTodayDayName, getTodayLabel, getTodayDateStr, capitalize, formatPKR } from '@/utils/format';
@@ -203,6 +204,7 @@ export default function TodayRouteScreen() {
           gpsLng: payload.gpsLng,
           gpsAddress: payload.gpsAddress,
           outOfRange: payload.outOfRange,
+          companyId: user.companyId || undefined,
         });
         setVisitedShopIds((prev) => new Set([...prev, shopId]));
         setTodayRecovery((prev) => {
@@ -423,7 +425,7 @@ export default function TodayRouteScreen() {
   }, [filteredShops, allRoutesEnabled, todayDay]);
 
   // ── Stats ────────────────────────────────────────────────────────────────
-  const totalOutstanding = todayShops.reduce((sum, s) => sum + s.balance, 0);
+  const totalOutstanding = todayShops.reduce((sum, s) => sum + getShopDisplayBalance(s, user?.companyId).balance, 0);
   const visitedCount = visitedShopIds.size;
   const progressPct = todayShops.length > 0 ? (visitedCount / todayShops.length) * 100 : 0;
 
@@ -712,6 +714,7 @@ export default function TodayRouteScreen() {
                   onCollect={() => setRecoveryShop(item.shop)}
                   onPress={() => setDetailShop(item.shop)}
                   onGpsVisit={() => setGpsVisitShop(item.shop)}
+                  companyId={user?.companyId}
                 />
               </View>
             );
@@ -945,6 +948,7 @@ export default function TodayRouteScreen() {
               onCollect={() => setRecoveryShop(item)}
               onPress={() => setDetailShop(item)}
               onGpsVisit={() => setGpsVisitShop(item)}
+              companyId={user?.companyId}
             />
           )}
           contentContainerStyle={styles.listContent}

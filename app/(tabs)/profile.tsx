@@ -232,6 +232,12 @@ export default function ProfileScreen() {
             label="Account Status"
             value={user.status === 'active' ? 'Active' : user.status}
           />
+          {user.companyName ? (
+            <>
+              <View style={styles.divider} />
+              <InfoRow icon="business" label="Company" value={user.companyName} />
+            </>
+          ) : null}
         </View>
 
         {/* Performance KPIs */}

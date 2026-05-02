@@ -1,6 +1,14 @@
 // Powered by OnSpace.AI
 import { API_BASE_URL } from '@/constants/config';
 
+export interface CompanyBalance {
+  id: string;
+  companyId: string;
+  balance: number;
+  creditLimit: number;
+  company?: { id: string; name: string };
+}
+
 export interface User {
   id: string;
   username: string;
@@ -9,6 +17,8 @@ export interface User {
   phone: string;
   status: string;
   allRoutesEnabled?: boolean;
+  companyId?: string;
+  companyName?: string;
   createdAt: string;
 }
 
@@ -29,6 +39,7 @@ export interface Shop {
   lat?: number;
   lng?: number;
   orderbooker?: { id: string; name: string };
+  companyBalances?: CompanyBalance[];
 }
 
 export interface Transaction {
@@ -47,6 +58,7 @@ export interface Transaction {
   gpsLat?: number | null;
   gpsLng?: number | null;
   gpsAddress?: string | null;
+  companyId?: string | null;
   createdAt: string;
   shop?: { id: string; name: string; area?: string };
   creator?: { id: string; name: string; role?: string };
@@ -101,8 +113,18 @@ export interface RecoverySummaryResponse {
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const url = `${API_BASE_URL}${path}`;
+  // Read token from storage for authenticated requests
+  let token: string | null = null;
+  try {
+    const { StorageService } = require('./storage');
+    token = await StorageService.getToken();
+  } catch {}
+
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
   const res = await fetch(url, {
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     ...options,
   });
   const data = await res.json();
@@ -146,6 +168,7 @@ export const ApiService = {
     gpsLng?: number;
     gpsAddress?: string;
     outOfRange?: boolean;
+    companyId?: string;
   }) =>
     request<Transaction>('/api/transactions', {
       method: 'POST',
