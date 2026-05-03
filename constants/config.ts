@@ -1,7 +1,9 @@
 // Powered by OnSpace.AI
 export const API_BASE_URL = 'https://alfalah-traders.vercel.app';
 
-export const ROUTE_DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'saturday'];
+// Working days for Al-Falah Traders (Pakistan schedule)
+// Friday is the weekly off day. Saturday through Thursday are working days.
+export const ROUTE_DAYS = ['saturday', 'sunday', 'monday', 'tuesday', 'wednesday', 'thursday'];
 
 export const DAY_NAMES: Record<number, string> = {
   1: 'monday',

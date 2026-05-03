@@ -167,11 +167,27 @@ export function resetSyncLock() {
 
 /**
  * Save shops locally for offline use (called on full sync)
+ * Also updates stored user data (including allRoutesEnabled) from server
  */
 export async function performFullSync(userId: string): Promise<boolean> {
   try {
     const data = await ApiService.mobileSync(userId);
     await StorageService.saveShops(data.shops);
+    // Update stored user with latest allRoutesEnabled from server
+    // This ensures admin toggle changes are picked up on sync
+    if (data.user) {
+      const existingUser = await StorageService.getUser();
+      if (existingUser) {
+        const updatedUser = {
+          ...existingUser,
+          allRoutesEnabled: data.user.allRoutesEnabled ?? existingUser.allRoutesEnabled,
+        };
+        const token = await StorageService.getToken();
+        if (token) {
+          await StorageService.saveUser(updatedUser, token);
+        }
+      }
+    }
     return true;
   } catch {
     return false;

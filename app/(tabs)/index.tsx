@@ -58,6 +58,7 @@ export default function TodayRouteScreen() {
     syncStatus,
     lastSyncTime,
     loadTodayShops,
+    loadAllShops,
     addToOfflineQueue,
     syncOfflineQueue,
   } = useShops();
@@ -112,8 +113,9 @@ export default function TodayRouteScreen() {
 
   const todayDay = getTodayDayName();
   const isFriday = todayDay === 'friday';
-  // Always show all routes — orderbooker needs to see ALL shops with balance
-  const allRoutesEnabled = true;
+  // Route-wise by default (Sunday = Sunday shops only).
+  // Admin can enable "All Routes Access" from website to show all days' shops.
+  const allRoutesEnabled = user?.allRoutesEnabled ?? false;
 
   // Feature 14: Check if tour has been completed on mount
   useEffect(() => {
@@ -127,6 +129,7 @@ export default function TodayRouteScreen() {
   useEffect(() => {
     if (user) {
       loadTodayShops(user.id, allRoutesEnabled);
+      loadAllShops(user.id);
       loadTodayStats();
       loadPendingNotifications();
     }
@@ -163,6 +166,7 @@ export default function TodayRouteScreen() {
   const handleRefresh = useCallback(async () => {
     if (user) {
       await loadTodayShops(user.id, allRoutesEnabled);
+      await loadAllShops(user.id);
       await loadTodayStats();
     }
   }, [user, allRoutesEnabled]);

@@ -48,6 +48,7 @@ export function ShopsProvider({ children }: { children: ReactNode }) {
   // ── Refs to avoid stale closures in event listeners ──────────────────────
   const wasOnlineRef = useRef<boolean | null>(null); // null = not yet initialized
   const currentUserIdRef = useRef<string | null>(null);
+  const allRoutesEnabledRef = useRef<boolean>(false); // track allRoutesEnabled for sync refreshes
   const isSyncingRef = useRef(false); // prevents double-trigger from AppState + NetInfo
 
   // ─── Load offline queue ────────────────────────────────────────────────────
@@ -55,6 +56,21 @@ export function ShopsProvider({ children }: { children: ReactNode }) {
     const queue = await StorageService.getOfflineQueue();
     setOfflineQueue(queue);
     return queue;
+  }, []);
+
+  // ─── Helper: fetch shops respecting allRoutesEnabled ──────────────────────
+  const fetchShopsForUser = useCallback(async (
+    userId: string,
+    allRoutesEnabled: boolean,
+  ): Promise<Shop[]> => {
+    if (allRoutesEnabled) {
+      // All routes mode: fetch ALL shops for this orderbooker
+      return await ApiService.getShops({ orderbookerId: userId });
+    } else {
+      // Route-wise mode: fetch only today's route shops
+      const todayDay = getTodayDayName();
+      return await ApiService.getShops({ orderbookerId: userId, routeDay: todayDay });
+    }
   }, []);
 
   // ─── Core sync executor (used by auto + manual) ───────────────────────────
@@ -70,9 +86,10 @@ export function ShopsProvider({ children }: { children: ReactNode }) {
       isSyncingRef.current = false;
       if (currentUserIdRef.current) {
         try {
-          const shops = await ApiService.getShops({
-            orderbookerId: currentUserIdRef.current,
-          });
+          const shops = await fetchShopsForUser(
+            currentUserIdRef.current,
+            allRoutesEnabledRef.current,
+          );
           setTodayShops(shops);
           await StorageService.saveShops(shops);
         } catch { /* use cached */ }
@@ -98,12 +115,13 @@ export function ShopsProvider({ children }: { children: ReactNode }) {
       const now = new Date().toISOString();
       setLastSyncTime(now);
 
-      // Refresh shops list after sync
+      // Refresh shops list after sync (respecting allRoutesEnabled)
       if (currentUserIdRef.current) {
         try {
-          const shops = await ApiService.getShops({
-            orderbookerId: currentUserIdRef.current,
-          });
+          const shops = await fetchShopsForUser(
+            currentUserIdRef.current,
+            allRoutesEnabledRef.current,
+          );
           setTodayShops(shops);
           await StorageService.saveShops(shops);
           setLastSyncTime(new Date().toISOString());
@@ -121,7 +139,7 @@ export function ShopsProvider({ children }: { children: ReactNode }) {
       setIsSyncing(false);
       isSyncingRef.current = false;
     }
-  }, [refreshOfflineQueue]);
+  }, [refreshOfflineQueue, fetchShopsForUser]);
 
   // Keep ref up to date so network listener always calls latest version
   const executeSyncFlowRef = useRef(executeSyncFlow);
@@ -184,26 +202,32 @@ export function ShopsProvider({ children }: { children: ReactNode }) {
   }, []); // empty deps — safe because we use refs
 
   // ─── Load today's shops ───────────────────────────────────────────────────
-  // ALWAYS fetch ALL shops for the orderbooker so they can collect recovery
-  // from any shop that has a balance, regardless of route day.
-  const loadTodayShops = useCallback(async (userId: string, _allRoutesEnabled?: boolean) => {
+  // Route-wise by default (e.g., Sunday = Sunday shops only).
+  // When allRoutesEnabled is true, fetch ALL shops grouped by route day.
+  const loadTodayShops = useCallback(async (userId: string, allRoutesEnabled?: boolean) => {
     currentUserIdRef.current = userId;
+    const isEnabled = allRoutesEnabled ?? false;
+    allRoutesEnabledRef.current = isEnabled;
     setIsLoadingToday(true);
     try {
-      // Always fetch ALL shops assigned to this orderbooker (no routeDay filter)
-      // Orderbookers need to see all shops with balance to collect recovery
-      const shops = await ApiService.getShops({ orderbookerId: userId });
+      const shops = await fetchShopsForUser(userId, isEnabled);
       setTodayShops(shops);
       await StorageService.saveShops(shops);
       setLastSyncTime(new Date().toISOString());
     } catch {
       const cached = await StorageService.getShops();
-      setTodayShops(cached);
+      // If route-wise mode, filter cached shops by today's route
+      if (!isEnabled) {
+        const todayDay = getTodayDayName();
+        setTodayShops(cached.filter((s) => s.routeDay === todayDay));
+      } else {
+        setTodayShops(cached);
+      }
     } finally {
       setIsLoadingToday(false);
       await refreshOfflineQueue();
     }
-  }, [refreshOfflineQueue]);
+  }, [refreshOfflineQueue, fetchShopsForUser]);
 
   // ─── Load all shops ───────────────────────────────────────────────────────
   const loadAllShops = useCallback(async (userId: string) => {
@@ -249,9 +273,10 @@ export function ShopsProvider({ children }: { children: ReactNode }) {
 
       if (currentUserIdRef.current) {
         try {
-          const shops = await ApiService.getShops({
-            orderbookerId: currentUserIdRef.current,
-          });
+          const shops = await fetchShopsForUser(
+            currentUserIdRef.current,
+            allRoutesEnabledRef.current,
+          );
           setTodayShops(shops);
           await StorageService.saveShops(shops);
         } catch { /* keep current */ }
@@ -268,16 +293,23 @@ export function ShopsProvider({ children }: { children: ReactNode }) {
       setIsSyncing(false);
       isSyncingRef.current = false;
     }
-  }, [refreshOfflineQueue]);
+  }, [refreshOfflineQueue, fetchShopsForUser]);
 
   // ─── Full sync (initial download on login) ────────────────────────────────
-  const triggerFullSync = useCallback(async (userId: string, _allRoutesEnabled?: boolean): Promise<boolean> => {
+  const triggerFullSync = useCallback(async (userId: string, allRoutesEnabled?: boolean): Promise<boolean> => {
     currentUserIdRef.current = userId;
+    const isEnabled = allRoutesEnabled ?? false;
+    allRoutesEnabledRef.current = isEnabled;
     const ok = await performFullSync(userId);
     if (ok) {
       const cached = await StorageService.getShops();
-      // Always show ALL shops — orderbooker needs to see shops with balance
-      setTodayShops(cached);
+      // Apply route-wise filtering based on allRoutesEnabled
+      if (isEnabled) {
+        setTodayShops(cached);
+      } else {
+        const todayDay = getTodayDayName();
+        setTodayShops(cached.filter((s) => s.routeDay === todayDay));
+      }
       setAllShops(cached);
       const t = await StorageService.getLastSync();
       setLastSyncTime(t);
