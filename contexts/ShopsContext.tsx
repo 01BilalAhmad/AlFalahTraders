@@ -73,6 +73,11 @@ export function ShopsProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // ─── Helper: filter out inactive shops from cached data ────────────────────
+  const filterActiveShops = useCallback((shops: Shop[]): Shop[] => {
+    return shops.filter((s) => s.status === 'active');
+  }, []);
+
   // ─── Core sync executor (used by auto + manual) ───────────────────────────
   const executeSyncFlow = useCallback(async () => {
     // Prevent double execution
@@ -216,18 +221,19 @@ export function ShopsProvider({ children }: { children: ReactNode }) {
       setLastSyncTime(new Date().toISOString());
     } catch {
       const cached = await StorageService.getShops();
+      const activeCached = filterActiveShops(cached);
       // If route-wise mode, filter cached shops by today's route
       if (!isEnabled) {
         const todayDay = getTodayDayName();
-        setTodayShops(cached.filter((s) => s.routeDay === todayDay));
+        setTodayShops(activeCached.filter((s) => s.routeDay === todayDay));
       } else {
-        setTodayShops(cached);
+        setTodayShops(activeCached);
       }
     } finally {
       setIsLoadingToday(false);
       await refreshOfflineQueue();
     }
-  }, [refreshOfflineQueue, fetchShopsForUser]);
+  }, [refreshOfflineQueue, fetchShopsForUser, filterActiveShops]);
 
   // ─── Load all shops ───────────────────────────────────────────────────────
   const loadAllShops = useCallback(async (userId: string) => {
@@ -303,19 +309,20 @@ export function ShopsProvider({ children }: { children: ReactNode }) {
     const ok = await performFullSync(userId);
     if (ok) {
       const cached = await StorageService.getShops();
+      const activeCached = filterActiveShops(cached);
       // Apply route-wise filtering based on allRoutesEnabled
       if (isEnabled) {
-        setTodayShops(cached);
+        setTodayShops(activeCached);
       } else {
         const todayDay = getTodayDayName();
-        setTodayShops(cached.filter((s) => s.routeDay === todayDay));
+        setTodayShops(activeCached.filter((s) => s.routeDay === todayDay));
       }
-      setAllShops(cached);
+      setAllShops(activeCached);
       const t = await StorageService.getLastSync();
       setLastSyncTime(t);
     }
     return ok;
-  }, []);
+  }, [filterActiveShops]);
 
   const setIsOnline = useCallback((v: boolean) => {
     const prev = wasOnlineRef.current;

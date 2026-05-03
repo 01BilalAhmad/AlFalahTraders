@@ -215,7 +215,7 @@ export const ApiService = {
     }>('/api/summary'),
 
   mobileSync: (userId: string) =>
-    request<{ user: User; shops: Shop[]; transactions: Transaction[]; syncTime: string }>(
+    request<{ user: User; shops: Shop[]; transactions: Transaction[]; shopNotes?: any[]; dailyTarget?: any; userPreferences?: any; syncTime: string }>(
       `/api/mobile/sync?userId=${userId}`
     ),
 

@@ -173,7 +173,7 @@ export async function performFullSync(userId: string): Promise<boolean> {
   try {
     const data = await ApiService.mobileSync(userId);
     await StorageService.saveShops(data.shops);
-    // Update stored user with latest allRoutesEnabled from server
+    // Update stored user with latest allRoutesEnabled + companyId from server
     // This ensures admin toggle changes are picked up on sync
     if (data.user) {
       const existingUser = await StorageService.getUser();
@@ -181,6 +181,8 @@ export async function performFullSync(userId: string): Promise<boolean> {
         const updatedUser = {
           ...existingUser,
           allRoutesEnabled: data.user.allRoutesEnabled ?? existingUser.allRoutesEnabled,
+          companyId: data.user.companyId ?? existingUser.companyId,
+          companyName: data.user.companyName ?? existingUser.companyName,
         };
         const token = await StorageService.getToken();
         if (token) {
