@@ -89,6 +89,11 @@ export default function TodayRouteScreen() {
     StorageService.getTodayRecovery().then((cached) => {
       if (cached > 0) setTodayRecovery(cached);
     });
+    // Load cached notification counts so they persist across app refreshes
+    StorageService.getNotifCounts().then((counts) => {
+      if (counts.sms > 0) setSmsSentCount(counts.sms);
+      if (counts.whatsapp > 0) setWhatsappSentCount(counts.whatsapp);
+    });
   }, []);
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -1009,8 +1014,14 @@ export default function TodayRouteScreen() {
         } : null}
         onDone={(method: NotificationMethod) => {
           setNotifChoice((s) => ({ ...s, visible: false }));
-          if (method === 'sms') setSmsSentCount((c) => c + 1);
-          else if (method === 'whatsapp') setWhatsappSentCount((c) => c + 1);
+          if (method === 'sms') {
+            setSmsSentCount((c) => c + 1);
+            StorageService.incrementNotifCount('sms');
+          }
+          else if (method === 'whatsapp') {
+            setWhatsappSentCount((c) => c + 1);
+            StorageService.incrementNotifCount('whatsapp');
+          }
           StorageService.getPendingNotifications(getTodayDateStr()).then((list) => {
             const entry = list.find((n) => n.shopName === notifChoice.shopName);
             if (entry) {

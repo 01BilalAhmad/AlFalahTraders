@@ -2,7 +2,7 @@
 // Direct SMS - sends silently without opening any messaging app
 import { Platform } from 'react-native';
 import * as Sms from 'expo-sms';
-import * as ExpoModules from 'expo-modules-core';
+import { requireNativeModule } from 'expo-modules-core';
 import { formatPKR } from '@/utils/format';
 
 interface SmsPayload {
@@ -16,19 +16,34 @@ interface SmsPayload {
 // Try to load native direct SMS module (Android only)
 let DirectSmsModule: any = null;
 try {
-  DirectSmsModule = (ExpoModules as any).requireModule?.('DirectSms') ?? null;
+  DirectSmsModule = requireNativeModule('DirectSms');
+  console.log('[DirectSMS] Native module loaded successfully');
 } catch {
   console.log('[DirectSMS] Native module not available, will fallback to expo-sms');
 }
 
 function formatPhoneNumber(raw: string): string {
-  let phone = raw.trim();
-  if (!phone.startsWith('+') && !phone.startsWith('0')) {
-    phone = '+92' + phone;
+  let phone = raw.trim().replace(/[\s\-()]/g, '');
+  if (phone.startsWith('+92')) {
+    // Already international format, keep as is for expo-sms
+    return phone;
   } else if (phone.startsWith('0')) {
-    phone = '+92' + phone.substring(1);
+    // Local format 03XX -> keep as is for SmsManager (more reliable)
+    // Will be converted to +92 only when using expo-sms fallback
+    return phone;
+  } else if (!phone.startsWith('+')) {
+    // No prefix, assume Pakistan local number
+    return '0' + phone;
   }
   return phone;
+}
+
+function formatPhoneNumberInternational(raw: string): string {
+  // Format for expo-sms which needs international format
+  let phone = raw.trim().replace(/[\s\-()]/g, '');
+  if (phone.startsWith('+')) return phone;
+  if (phone.startsWith('0')) return '+92' + phone.substring(1);
+  return '+92' + phone;
 }
 
 function buildMessage(shopName: string, openingBalance: number, recoveryAmount: number, remainingBalance: number): string {
@@ -57,7 +72,8 @@ export async function sendRecoverySms(payload: SmsPayload): Promise<boolean> {
     return false;
   }
 
-  const phoneNumber = formatPhoneNumber(shopPhone);
+  const localPhone = formatPhoneNumber(shopPhone); // 03XX format for SmsManager
+  const intlPhone = formatPhoneNumberInternational(shopPhone); // +923XX format for expo-sms
   const message = buildMessage(shopName, openingBalance, recoveryAmount, remainingBalance);
 
   try {
@@ -73,32 +89,40 @@ export async function sendRecoverySms(payload: SmsPayload): Promise<boolean> {
           await DirectSmsModule.requestPermission();
         } catch (permErr: any) {
           console.warn('[DirectSMS] Permission denied, falling back to expo-sms');
-          return await fallbackExpoSms(phoneNumber, message);
+          return await fallbackExpoSms(intlPhone, message);
         }
+      }
+
+      // Re-check permission after request
+      const hasPermissionNow = await DirectSmsModule.checkPermission();
+      if (!hasPermissionNow) {
+        console.warn('[DirectSMS] Permission still not granted, falling back to expo-sms');
+        return await fallbackExpoSms(intlPhone, message);
       }
 
       // Check if SMS is available (SIM ready + permission)
       const available = await DirectSmsModule.isAvailable();
       if (!available) {
         console.warn('[DirectSMS] SMS not available (no SIM or no permission), falling back');
-        return await fallbackExpoSms(phoneNumber, message);
+        return await fallbackExpoSms(intlPhone, message);
       }
 
-      // Send directly - no UI popup!
-      const result = await DirectSmsModule.sendDirectSms(phoneNumber, message);
+      // Send directly using local format (03XX) - no UI popup!
+      console.log('[DirectSMS] Sending to:', localPhone);
+      const result = await DirectSmsModule.sendDirectSms(localPhone, message);
       console.log('[DirectSMS] Send result:', result);
       return !!result;
     }
 
     // === METHOD 2: Fallback to expo-sms (opens messaging app) ===
-    return await fallbackExpoSms(phoneNumber, message);
+    return await fallbackExpoSms(intlPhone, message);
 
   } catch (error: any) {
     console.error('[SMS] Error:', error?.message || error);
     // If native fails, try fallback
     if (Platform.OS === 'android' && DirectSmsModule) {
       try {
-        return await fallbackExpoSms(phoneNumber, message);
+        return await fallbackExpoSms(intlPhone, message);
       } catch {
         return false;
       }

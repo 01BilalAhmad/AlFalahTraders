@@ -18,6 +18,7 @@ import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '@/constan
 import { sendRecoverySms } from '@/utils/sendRecoverySms';
 import { sendRecoveryWhatsapp } from '@/utils/sendRecoveryWhatsapp';
 import { formatPKR } from '@/utils/format';
+import { Platform } from 'react-native';
 
 interface NotificationPayload {
   shopPhone: string;
@@ -37,6 +38,7 @@ interface NotificationChoiceProps {
 
 export function NotificationChoice({ visible, payload, onDone }: NotificationChoiceProps) {
   const [sending, setSending] = useState(false);
+  const [smsStatus, setSmsStatus] = useState<'idle' | 'success' | 'failed'>('idle');
   const scale = useRef(new Animated.Value(0.8)).current;
   const opacity = useRef(new Animated.Value(0)).current;
   const receiptRef = useRef<View>(null);
@@ -44,6 +46,7 @@ export function NotificationChoice({ visible, payload, onDone }: NotificationCho
   useEffect(() => {
     if (visible) {
       setSending(false);
+      setSmsStatus('idle');
       Animated.parallel([
         Animated.spring(scale, { toValue: 1, useNativeDriver: true, tension: 80, friction: 10 }),
         Animated.timing(opacity, { toValue: 1, duration: 200, useNativeDriver: true }),
@@ -63,16 +66,41 @@ export function NotificationChoice({ visible, payload, onDone }: NotificationCho
   const handleSms = async () => {
     if (!payload) return;
     setSending(true);
+    setSmsStatus('idle');
     try {
       const sent = await sendRecoverySms(payload);
       if (sent) {
         console.log('[NotificationChoice] SMS sent successfully');
+        setSmsStatus('success');
+        // Small delay to show success state before closing
+        setTimeout(() => {
+          onDone('sms');
+        }, 800);
+      } else {
+        console.warn('[NotificationChoice] SMS failed to send');
+        setSmsStatus('failed');
+        Alert.alert(
+          'SMS Failed',
+          'Could not send SMS directly. Please try WhatsApp or send manually from your messaging app.',
+          [
+            { text: 'Try WhatsApp', onPress: () => { setSmsStatus('idle'); } },
+            { text: 'OK', onPress: () => { setSmsStatus('idle'); onDone('sms'); } },
+          ]
+        );
       }
     } catch (err) {
       console.error('[NotificationChoice] SMS error:', err);
+      setSmsStatus('failed');
+      Alert.alert(
+        'SMS Error',
+        'An error occurred while sending SMS. Please try WhatsApp or send manually.',
+        [
+          { text: 'Try WhatsApp', onPress: () => { setSmsStatus('idle'); } },
+          { text: 'OK', onPress: () => { setSmsStatus('idle'); onDone('sms'); } },
+        ]
+      );
     }
     setSending(false);
-    onDone('sms');
   };
 
   const handleWhatsapp = async () => {

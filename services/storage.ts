@@ -16,6 +16,7 @@ const KEYS = {
   DAILY_TARGETS: 'af_daily_targets',
   VISIT_STREAKS: 'af_visit_streaks',
   TODAY_RECOVERY: 'af_today_recovery',
+  NOTIF_COUNTS: 'af_notif_counts',
 };
 
 export interface PendingNotification {
@@ -378,6 +379,41 @@ export const StorageService = {
       return entry.date === getTodayDateStr() ? entry.amount : 0;
     } catch {
       return 0;
+    }
+  },
+
+  // --- Notification Counts (SMS/WhatsApp sent today) ---
+  getNotifCounts: async (): Promise<{ sms: number; whatsapp: number }> => {
+    try {
+      const raw = await AsyncStorage.getItem(KEYS.NOTIF_COUNTS);
+      if (!raw) return { sms: 0, whatsapp: 0 };
+      const entry = JSON.parse(raw);
+      // Only return if from today, otherwise reset
+      return entry.date === getTodayDateStr()
+        ? { sms: entry.sms || 0, whatsapp: entry.whatsapp || 0 }
+        : { sms: 0, whatsapp: 0 };
+    } catch {
+      return { sms: 0, whatsapp: 0 };
+    }
+  },
+
+  incrementNotifCount: async (method: 'sms' | 'whatsapp'): Promise<{ sms: number; whatsapp: number }> => {
+    try {
+      const raw = await AsyncStorage.getItem(KEYS.NOTIF_COUNTS);
+      let entry: { date: string; sms: number; whatsapp: number };
+      if (!raw) {
+        entry = { date: getTodayDateStr(), sms: 0, whatsapp: 0 };
+      } else {
+        entry = JSON.parse(raw);
+        if (entry.date !== getTodayDateStr()) {
+          entry = { date: getTodayDateStr(), sms: 0, whatsapp: 0 };
+        }
+      }
+      entry[method] = (entry[method] || 0) + 1;
+      await AsyncStorage.setItem(KEYS.NOTIF_COUNTS, JSON.stringify(entry));
+      return { sms: entry.sms, whatsapp: entry.whatsapp };
+    } catch {
+      return { sms: 0, whatsapp: 0 };
     }
   },
 };
