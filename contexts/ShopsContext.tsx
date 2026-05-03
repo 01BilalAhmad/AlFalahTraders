@@ -70,15 +70,11 @@ export function ShopsProvider({ children }: { children: ReactNode }) {
       isSyncingRef.current = false;
       if (currentUserIdRef.current) {
         try {
-          const day = getTodayDayName();
-          if (day !== 'friday' && day !== 'sunday') {
-            const shops = await ApiService.getShops({
-              orderbookerId: currentUserIdRef.current,
-              routeDay: day,
-            });
-            setTodayShops(shops);
-            await StorageService.saveShops(shops);
-          }
+          const shops = await ApiService.getShops({
+            orderbookerId: currentUserIdRef.current,
+          });
+          setTodayShops(shops);
+          await StorageService.saveShops(shops);
         } catch { /* use cached */ }
       }
       return;
@@ -105,16 +101,12 @@ export function ShopsProvider({ children }: { children: ReactNode }) {
       // Refresh shops list after sync
       if (currentUserIdRef.current) {
         try {
-          const day = getTodayDayName();
-          if (day !== 'friday' && day !== 'sunday') {
-            const shops = await ApiService.getShops({
-              orderbookerId: currentUserIdRef.current,
-              routeDay: day,
-            });
-            setTodayShops(shops);
-            await StorageService.saveShops(shops);
-            setLastSyncTime(new Date().toISOString());
-          }
+          const shops = await ApiService.getShops({
+            orderbookerId: currentUserIdRef.current,
+          });
+          setTodayShops(shops);
+          await StorageService.saveShops(shops);
+          setLastSyncTime(new Date().toISOString());
         } catch { /* keep current list */ }
       }
 
@@ -192,37 +184,21 @@ export function ShopsProvider({ children }: { children: ReactNode }) {
   }, []); // empty deps — safe because we use refs
 
   // ─── Load today's shops ───────────────────────────────────────────────────
-  const loadTodayShops = useCallback(async (userId: string, allRoutesEnabled?: boolean) => {
+  // ALWAYS fetch ALL shops for the orderbooker so they can collect recovery
+  // from any shop that has a balance, regardless of route day.
+  const loadTodayShops = useCallback(async (userId: string, _allRoutesEnabled?: boolean) => {
     currentUserIdRef.current = userId;
     setIsLoadingToday(true);
     try {
-      if (allRoutesEnabled) {
-        // All routes mode: fetch ALL shops (no routeDay filter)
-        const shops = await ApiService.getShops({ orderbookerId: userId });
-        setTodayShops(shops);
-        await StorageService.saveShops(shops);
-        setLastSyncTime(new Date().toISOString());
-      } else {
-        // Normal mode: only today's route shops
-        const day = getTodayDayName();
-        if (day === 'friday' || day === 'sunday') {
-          setTodayShops([]);
-          return;
-        }
-        const shops = await ApiService.getShops({ orderbookerId: userId, routeDay: day });
-        setTodayShops(shops);
-        await StorageService.saveShops(shops);
-        setLastSyncTime(new Date().toISOString());
-      }
+      // Always fetch ALL shops assigned to this orderbooker (no routeDay filter)
+      // Orderbookers need to see all shops with balance to collect recovery
+      const shops = await ApiService.getShops({ orderbookerId: userId });
+      setTodayShops(shops);
+      await StorageService.saveShops(shops);
+      setLastSyncTime(new Date().toISOString());
     } catch {
       const cached = await StorageService.getShops();
-      if (allRoutesEnabled) {
-        setTodayShops(cached);
-      } else {
-        const day = getTodayDayName();
-        const filtered = cached.filter((s) => s.routeDay === day);
-        setTodayShops(filtered);
-      }
+      setTodayShops(cached);
     } finally {
       setIsLoadingToday(false);
       await refreshOfflineQueue();
@@ -273,15 +249,11 @@ export function ShopsProvider({ children }: { children: ReactNode }) {
 
       if (currentUserIdRef.current) {
         try {
-          const day = getTodayDayName();
-          if (day !== 'friday' && day !== 'sunday') {
-            const shops = await ApiService.getShops({
-              orderbookerId: currentUserIdRef.current,
-              routeDay: day,
-            });
-            setTodayShops(shops);
-            await StorageService.saveShops(shops);
-          }
+          const shops = await ApiService.getShops({
+            orderbookerId: currentUserIdRef.current,
+          });
+          setTodayShops(shops);
+          await StorageService.saveShops(shops);
         } catch { /* keep current */ }
       }
 
@@ -299,17 +271,13 @@ export function ShopsProvider({ children }: { children: ReactNode }) {
   }, [refreshOfflineQueue]);
 
   // ─── Full sync (initial download on login) ────────────────────────────────
-  const triggerFullSync = useCallback(async (userId: string, allRoutesEnabled?: boolean): Promise<boolean> => {
+  const triggerFullSync = useCallback(async (userId: string, _allRoutesEnabled?: boolean): Promise<boolean> => {
     currentUserIdRef.current = userId;
     const ok = await performFullSync(userId);
     if (ok) {
       const cached = await StorageService.getShops();
-      if (allRoutesEnabled) {
-        setTodayShops(cached);
-      } else {
-        const day = getTodayDayName();
-        setTodayShops(cached.filter((s) => s.routeDay === day));
-      }
+      // Always show ALL shops — orderbooker needs to see shops with balance
+      setTodayShops(cached);
       setAllShops(cached);
       const t = await StorageService.getLastSync();
       setLastSyncTime(t);

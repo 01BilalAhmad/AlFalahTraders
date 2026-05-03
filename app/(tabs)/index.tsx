@@ -112,7 +112,8 @@ export default function TodayRouteScreen() {
 
   const todayDay = getTodayDayName();
   const isFriday = todayDay === 'friday';
-  const allRoutesEnabled = !!user?.allRoutesEnabled;
+  // Always show all routes — orderbooker needs to see ALL shops with balance
+  const allRoutesEnabled = true;
 
   // Feature 14: Check if tour has been completed on mount
   useEffect(() => {
@@ -395,8 +396,11 @@ export default function TodayRouteScreen() {
       groups[day].push(shop);
     }
 
-    // Sort by ROUTE_DAYS order (monday first), then any extra days
+    // Sort: today's route FIRST, then other days by ROUTE_DAYS order
     const sortedDays = Object.keys(groups).sort((a, b) => {
+      // Today's route always comes first
+      if (a === todayDay && b !== todayDay) return -1;
+      if (b === todayDay && a !== todayDay) return 1;
       const idxA = ROUTE_DAYS.indexOf(a);
       const idxB = ROUTE_DAYS.indexOf(b);
       if (idxA === -1 && idxB === -1) return a.localeCompare(b);
